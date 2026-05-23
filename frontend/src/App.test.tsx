@@ -36,7 +36,7 @@ describe('App chat flow', () => {
             type: 'tool_result',
             title: 'Tool result: internet_search',
             content:
-              `content='{"query":"What is LangGraph?","results":[{"url":"https://example.com/langgraph","title":"LangGraph docs","content":"LangGraph is the runtime for stateful agent workflows.","score":0.99}],"response_time":0.42}' name='internet_search' tool_call_id='call_123'`,
+              `content='     1\t{"query":"What is LangGraph?","results":[{"url":"https://example.com/langgraph","title":"LangGraph docs","content":"LangGraph is the runtime for stateful agent workflows.","score":0.99}],"response_time":0.42}' name='internet_search' tool_call_id='call_123'`,
             metadata: { tool_name: 'internet_search' },
           },
         },
@@ -59,7 +59,7 @@ describe('App chat flow', () => {
                 type: 'tool_result',
                 title: 'Tool result: internet_search',
                 content:
-                  `content='{"query":"What is LangGraph?","results":[{"url":"https://example.com/langgraph","title":"LangGraph docs","content":"LangGraph is the runtime for stateful agent workflows.","score":0.99}],"response_time":0.42}' name='internet_search' tool_call_id='call_123'`,
+                  `content='     1\t{"query":"What is LangGraph?","results":[{"url":"https://example.com/langgraph","title":"LangGraph docs","content":"LangGraph is the runtime for stateful agent workflows.","score":0.99}],"response_time":0.42}' name='internet_search' tool_call_id='call_123'`,
                 metadata: { tool_name: 'internet_search' },
               },
               {

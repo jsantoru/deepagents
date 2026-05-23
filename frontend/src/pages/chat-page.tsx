@@ -333,7 +333,9 @@ type TraceDisplay = {
 
 function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
   if (event.type === 'assistant' || event.type === 'assistant_delta') {
-    const normalizedContent = unwrapStructuredToolContent(event.content)
+    const normalizedContent = normalizeStructuredPayloadText(
+      unwrapStructuredToolContent(event.content),
+    )
     const parsed = tryParseJson(normalizedContent)
     if (Array.isArray(parsed)) {
       const toolCalls = parsed.filter(isFunctionCallRecord)
@@ -371,7 +373,9 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
   }
 
   if (event.type === 'tool' || event.type === 'tool_result' || event.type === 'tool_delta') {
-    const normalizedContent = unwrapStructuredToolContent(event.content)
+    const normalizedContent = normalizeStructuredPayloadText(
+      unwrapStructuredToolContent(event.content),
+    )
     const parsed = tryParseJson(normalizedContent)
     if (isRecord(parsed)) {
       if ('query' in parsed && Array.isArray(parsed.results)) {
@@ -517,7 +521,7 @@ function extractSearchQueriesFromJsonText(value: string): string[] {
 }
 
 function extractPrimaryQuery(value: string): string | undefined {
-  const normalizedContent = unwrapStructuredToolContent(value)
+  const normalizedContent = normalizeStructuredPayloadText(unwrapStructuredToolContent(value))
   const parsed = tryParseJson(normalizedContent)
   if (isRecord(parsed) && typeof parsed.query === 'string') {
     return parsed.query
@@ -538,6 +542,13 @@ function unwrapStructuredToolContent(value: string): string {
   }
 
   return value
+}
+
+function normalizeStructuredPayloadText(value: string): string {
+  return value
+    .replace(/^\s*\d+\t/, '')
+    .replace(/(?:\r?\n)\s*\d+\t/g, '\n')
+    .trim()
 }
 
 function applyTraceEvent(trace: ChatTraceEvent[], incomingEvent: ChatTraceEvent): ChatTraceEvent[] {
