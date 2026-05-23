@@ -17,41 +17,51 @@ Monorepo for a Python DeepAgents backend and a React/Vite frontend. The project 
 
 - `backend/` FastAPI service, DeepAgents integration, persistence, and admin APIs
 - `frontend/` React app with chat UI and metrics dashboard
-- `docker-compose.yml` local PostgreSQL service
+- `docker-compose.yml` local PostgreSQL, backend, and frontend services
 
 ## Local setup
 
-### 1. Start PostgreSQL
+### 1. Configure env files
 
 ```bash
-docker compose up -d postgres
+cd backend
+copy .env.example .env
+
+cd ..\frontend
+copy .env.example .env
 ```
 
-### 2. Configure the backend
+Set at least in `backend/.env`:
+
+- `OPENAI_API_KEY`
+- `TAVILY_API_KEY`
+
+### 2. Start the full stack with Docker Compose
+
+```bash
+docker compose up --build
+```
+
+Services:
+
+- frontend: `http://localhost:5173`
+- backend: `http://localhost:8000`
+- postgres: `localhost:5432`
+
+### 3. Run the backend locally without Docker if needed
 
 ```bash
 cd backend
 uv python install 3.12
 uv sync
-copy .env.example .env
-```
 
-Set at least:
-
-- `OPENAI_API_KEY`
-- `TAVILY_API_KEY`
-
-Run the API:
-
-```bash
 uv run uvicorn deepagents_app.main:app --reload --port 8000
 ```
 
-### 3. Configure the frontend
+### 4. Run the frontend locally without Docker if needed
 
 ```bash
 cd frontend
-copy .env.example .env
 npm install
 npm run dev
 ```
