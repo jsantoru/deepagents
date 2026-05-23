@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import {
   AlertCircle,
   ArrowUp,
@@ -231,6 +231,21 @@ function PromptComposer({
   const disabled = isSending
   const placeholder = isDocked ? 'Ask for follow-up changes' : 'Message Codex'
 
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== 'Enter' || event.shiftKey) {
+      return
+    }
+
+    event.preventDefault()
+
+    const form = event.currentTarget.form
+    if (!form) {
+      return
+    }
+
+    form.requestSubmit()
+  }
+
   return (
     <form className="space-y-3" onSubmit={onSubmit}>
       <div className="overflow-hidden rounded-[30px] border border-stone-300 bg-white shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
@@ -241,6 +256,7 @@ function PromptComposer({
           placeholder={placeholder}
           value={disabled ? '' : draft}
           onChange={(event) => onChange(event.target.value)}
+          onKeyDown={handleKeyDown}
         />
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-stone-200 px-4 py-3">
           <div className="flex flex-wrap items-center gap-3 text-sm text-stone-500">

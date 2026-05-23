@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { Bot, ChartColumnBig, SearchCode } from 'lucide-react'
 
 import { Skeleton } from '@/components/ui/skeleton'
@@ -22,8 +22,24 @@ const navigationItems = [
 function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(183,244,216,0.9),_transparent_28%),linear-gradient(180deg,_#f9f6ef_0%,_#efe8db_42%,_#e7dece_100%)] text-foreground">
-        <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-4 sm:px-6 lg:px-8">
+      <AppShell />
+    </BrowserRouter>
+  )
+}
+
+function AppShell() {
+  const location = useLocation()
+  const isChatRoute = location.pathname === '/'
+
+  return (
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(249,249,247,0.96)_42%,_rgba(241,241,238,0.98)_100%)] text-foreground">
+      <div
+        className={[
+          'mx-auto flex min-h-screen w-full flex-col px-4 sm:px-6 lg:px-8',
+          isChatRoute ? 'max-w-none' : 'max-w-7xl py-4',
+        ].join(' ')}
+      >
+        {!isChatRoute ? (
           <header className="mb-4 flex items-center justify-between rounded-[28px] border border-black/10 bg-white/70 px-5 py-4 shadow-[0_18px_60px_rgba(60,52,37,0.08)] backdrop-blur">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-black text-white">
@@ -54,18 +70,18 @@ function App() {
               ))}
             </nav>
           </header>
+        ) : null}
 
-          <main className="flex-1">
-            <Suspense fallback={<RouteSkeleton />}>
-              <Routes>
-                <Route path="/" element={<ChatPage />} />
-                <Route path="/admin" element={<AdminPage />} />
-              </Routes>
-            </Suspense>
-          </main>
-        </div>
+        <main className="flex-1">
+          <Suspense fallback={<RouteSkeleton />}>
+            <Routes>
+              <Route path="/" element={<ChatPage />} />
+              <Route path="/admin" element={<AdminPage />} />
+            </Routes>
+          </Suspense>
+        </main>
       </div>
-    </BrowserRouter>
+    </div>
   )
 }
 
