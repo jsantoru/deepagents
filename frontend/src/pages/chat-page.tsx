@@ -51,9 +51,9 @@ const starterPrompts = [
 ]
 
 const chromeItems = [
-  { icon: FolderGit2, label: 'deepagents' },
-  { icon: Monitor, label: 'Work locally' },
-  { icon: GitBranch, label: 'main' },
+  { icon: FolderGit2, label: 'Deep research' },
+  { icon: Monitor, label: 'Web sources' },
+  { icon: GitBranch, label: 'Citations ready' },
 ]
 
 export function ChatPage() {
@@ -149,7 +149,7 @@ export function ChatPage() {
       <div
         className={[
           'transition-all duration-300',
-          isComposerDocked ? 'flex-1 pb-56' : 'flex flex-1 flex-col justify-center pb-16',
+          isComposerDocked ? 'flex-1 pb-[22rem] sm:pb-[20rem]' : 'flex flex-1 flex-col justify-center pb-16',
         ].join(' ')}
       >
         {!isComposerDocked ? (
@@ -365,6 +365,19 @@ function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
         if (!display) {
           return null
         }
+        if (display.inlineText) {
+          return (
+            <div
+              key={`${event.type}-${index}-${event.title}`}
+              className={[
+                'px-1 text-sm leading-6 text-current/70',
+                display.animatePulse ? 'animate-pulse' : '',
+              ].join(' ')}
+            >
+              {display.inlineText}
+            </div>
+          )
+        }
         return (
           <div
             key={`${event.type}-${index}-${event.title}`}
@@ -482,6 +495,7 @@ type TraceDisplay = {
   links: Array<{ label: string; url: string }>
   metadata: Record<string, string | number>
   animatePulse?: boolean
+  inlineText?: string
 }
 
 function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
@@ -501,12 +515,13 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
         const reasoningSummary = extractReasoningSummary(reasoningSteps)
         if (!toolCalls.length && !reasoningSummary) {
           return {
-            title: 'Thinking',
-            summary: 'Thinking...',
+            title: '',
+            summary: '',
             bullets: [],
             links: [],
             metadata: {},
             animatePulse: true,
+            inlineText: 'Thinking...',
           }
         }
         return {

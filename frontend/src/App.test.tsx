@@ -242,7 +242,6 @@ describe('App chat flow', () => {
     await user.type(await screen.findByLabelText('Message'), 'Think first')
     await user.click(screen.getByRole('button', { name: 'Send prompt' }))
 
-    expect(await screen.findByText('Thinking')).toBeVisible()
     expect(await screen.findByText('Thinking...')).toBeVisible()
     expect(screen.queryByText(/"summary":\[\]/)).not.toBeInTheDocument()
     expect(screen.queryByText('reasoning_steps: 1')).not.toBeInTheDocument()
