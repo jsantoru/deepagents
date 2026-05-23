@@ -664,6 +664,9 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
 
     if (looksLikeJsonFragment(normalizedContent)) {
       const queries = extractSearchQueriesFromJsonText(normalizedContent)
+      if (event.type === 'tool_result' && queries.length === 0) {
+        return null
+      }
       return {
         title: resolveToolTitle(event, resolvedToolName),
         summary:

@@ -246,6 +246,79 @@ describe('App chat flow', () => {
     expect(screen.queryByText(/"summary":\[\]/)).not.toBeInTheDocument()
     expect(screen.queryByText('reasoning_steps: 1')).not.toBeInTheDocument()
   })
+
+  it('suppresses unresolved tool-result placeholders until a query or results can be parsed', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: createSseStream([
+        {
+          event: 'trace',
+          data: {
+            id: 'tool-result-early',
+            type: 'tool_result',
+            title: 'Tool result: internet_search',
+            content: '{"status":"ok"}',
+            metadata: { tool_name: 'internet_search' },
+          },
+        },
+        {
+          event: 'trace',
+          data: {
+            id: 'tool-call-2',
+            type: 'tool',
+            title: 'Tool call: internet_search',
+            content: '{"query":"Tavily fintech","results":[{"url":"https://example.com/tavily","title":"Tavily raises $25M","content":"Tavily raises $25M to connect AI agents to the web.","score":0.99}]}',
+            metadata: { tool_name: 'internet_search' },
+          },
+        },
+        {
+          event: 'final',
+          data: {
+            conversation_id: 'conversation-4',
+            run_id: 'run-4',
+            answer: 'Done.',
+            trace: [
+              {
+                id: 'tool-call-2',
+                type: 'tool',
+                title: 'Tool call: internet_search',
+                content: '{"query":"Tavily fintech","results":[{"url":"https://example.com/tavily","title":"Tavily raises $25M","content":"Tavily raises $25M to connect AI agents to the web.","score":0.99}]}',
+                metadata: { tool_name: 'internet_search' },
+              },
+              {
+                id: 'final-answer-4',
+                type: 'final',
+                title: 'Final answer',
+                content: 'Done.',
+                metadata: {},
+              },
+            ],
+            metrics: {
+              model_name: 'openai:gpt-5-nano',
+              latency_ms: 90,
+              input_tokens: 11,
+              output_tokens: 7,
+              total_tokens: 18,
+              estimated_cost_usd: 0.000004,
+              search_calls: 1,
+            },
+          },
+        },
+      ]),
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await user.type(await screen.findByLabelText('Message'), 'Check Tavily')
+    await user.click(screen.getByRole('button', { name: 'Send prompt' }))
+
+    expect(screen.queryByText('Search results received.')).not.toBeInTheDocument()
+    expect(await screen.findByText('Query: Tavily fintech')).toBeVisible()
+    expect(await screen.findByText(/Tavily raises \$25M:/)).toBeVisible()
+  })
 })
 
 function createSseStream(events: Array<{ event: string; data: unknown }>) {
