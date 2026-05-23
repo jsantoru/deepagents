@@ -16,7 +16,7 @@ class StubAgentService(AgentService):
     async def chat(self, payload: ChatRequest) -> AgentRunResult:
         return AgentRunResult(
             answer=f"echo: {payload.message}",
-            model_name="openai:gpt-4.1-mini",
+            model_name="openai:gpt-5-nano",
             input_tokens=11,
             output_tokens=7,
             total_tokens=18,

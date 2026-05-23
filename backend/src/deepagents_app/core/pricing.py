@@ -1,4 +1,6 @@
 MODEL_PRICING_USD_PER_MILLION_TOKENS: dict[str, tuple[float, float]] = {
+    "openai:gpt-5-nano": (0.05, 0.4),
+    "openai:gpt-4.1-nano": (0.1, 0.4),
     "openai:gpt-4.1-mini": (0.4, 1.6),
 }
 

@@ -9,7 +9,7 @@ def test_admin_overview_returns_aggregates(client) -> None:
         "conversation_count": 2,
         "run_count": 2,
         "total_tokens": 36,
-        "total_estimated_cost_usd": 3.2e-05,
+        "total_estimated_cost_usd": 6e-06,
         "average_latency_ms": response.json()["average_latency_ms"],
     }
 

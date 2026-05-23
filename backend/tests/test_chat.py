@@ -8,12 +8,12 @@ def test_chat_endpoint_returns_answer(client) -> None:
     assert payload["conversation_id"]
     assert payload["run_id"]
     assert payload["metrics"] == {
-        "model_name": "openai:gpt-4.1-mini",
+        "model_name": "openai:gpt-5-nano",
         "latency_ms": payload["metrics"]["latency_ms"],
         "input_tokens": 11,
         "output_tokens": 7,
         "total_tokens": 18,
-        "estimated_cost_usd": 1.6e-05,
+        "estimated_cost_usd": 3e-06,
         "search_calls": 1,
     }
 

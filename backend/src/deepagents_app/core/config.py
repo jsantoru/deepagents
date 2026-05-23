@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     openai_api_key: str = ""
     tavily_api_key: str = ""
-    agent_model: str = "openai:gpt-4.1-mini"
+    agent_model: str = "openai:gpt-5-nano"
     agent_max_search_results: int = 5
 
     model_config = SettingsConfigDict(
