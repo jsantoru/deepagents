@@ -10,6 +10,8 @@ import {
   Wrench,
   Sparkles,
 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -163,7 +165,7 @@ export function ChatPage() {
                   <div className="mb-2 text-xs uppercase tracking-[0.28em] text-current/60">
                     {message.role === 'user' ? 'You' : 'Agent'}
                   </div>
-                  <p className="whitespace-pre-wrap text-sm leading-7">{message.content}</p>
+                  <MessageBody message={message} />
                   {message.trace?.length ? <TraceTimeline trace={message.trace} /> : null}
                   {message.metrics ? <RunMetrics metrics={message.metrics} /> : null}
                 </article>
@@ -195,6 +197,30 @@ export function ChatPage() {
       </Card>
     </div>
   )
+}
+
+function MessageBody({ message }: { message: TranscriptMessage }) {
+  if (!message.content.trim()) {
+    if (message.role === 'assistant') {
+      return (
+        <p className="text-sm italic leading-7 text-stone-500">
+          Working through the request...
+        </p>
+      )
+    }
+
+    return null
+  }
+
+  if (message.role === 'assistant') {
+    return (
+      <div className="prose prose-sm max-w-none whitespace-pre-wrap prose-headings:mt-4 prose-headings:text-stone-950 prose-p:leading-7 prose-li:leading-7 prose-strong:text-stone-950 prose-code:rounded prose-code:bg-stone-100 prose-code:px-1 prose-code:py-0.5 prose-pre:bg-stone-950 prose-pre:text-stone-50">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+      </div>
+    )
+  }
+
+  return <p className="whitespace-pre-wrap text-sm leading-7">{message.content}</p>
 }
 
 function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
@@ -315,6 +341,16 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
         }
       }
     }
+
+    if (looksLikeJsonFragment(event.content)) {
+      return {
+        title: 'Planning next steps',
+        summary: 'Reasoning through the next step.',
+        bullets: extractSearchQueriesFromJsonText(event.content).map((query) => `Search: ${query}`),
+        links: [],
+        metadata: event.metadata,
+      }
+    }
   }
 
   if (event.type === 'tool' || event.type === 'tool_result' || event.type === 'tool_delta') {
@@ -385,6 +421,17 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
         }
       }
     }
+
+    if (event.type === 'tool_delta' && looksLikeJsonFragment(event.content)) {
+      const queries = extractSearchQueriesFromJsonText(event.content)
+      return {
+        title: 'Searching the web',
+        summary: queries[0] ? `Query: ${queries[0]}` : 'Receiving search results...',
+        bullets: [],
+        links: [],
+        metadata: event.metadata,
+      }
+    }
   }
 
   return {
@@ -422,6 +469,15 @@ function compactText(value: string, maxLength: number): string {
   return `${normalized.slice(0, maxLength - 1)}...`
 }
 
+function looksLikeJsonFragment(value: string): boolean {
+  const trimmed = value.trim()
+  return trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.includes('"query"')
+}
+
+function extractSearchQueriesFromJsonText(value: string): string[] {
+  return Array.from(value.matchAll(/"query"\s*:\s*"([^"]+)"/g), (match) => match[1])
+}
+
 function applyTraceEvent(trace: ChatTraceEvent[], incomingEvent: ChatTraceEvent): ChatTraceEvent[] {
   const eventIndex = trace.findIndex((event) => event.id === incomingEvent.id)
   if (eventIndex === -1) {
@@ -441,9 +497,10 @@ function applyTraceEvent(trace: ChatTraceEvent[], incomingEvent: ChatTraceEvent)
 }
 
 function updateAssistantContent(content: string, event: ChatTraceEvent): string {
-  if (event.type === 'final' || event.type === 'assistant' || event.type === 'assistant_delta') {
+  if (event.type === 'final') {
     return content ? `${content}${event.content}` : event.content
   }
+
   return content
 }
 

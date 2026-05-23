@@ -39,7 +39,7 @@ describe('App chat flow', () => {
           data: {
             conversation_id: 'conversation-1',
             run_id: 'run-1',
-            answer: 'LangGraph is the runtime beneath DeepAgents.',
+            answer: 'LangGraph is the **runtime** beneath DeepAgents.',
             trace: [
               {
                 id: 'note-1',
@@ -59,7 +59,7 @@ describe('App chat flow', () => {
                 id: 'final-1',
                 type: 'final',
                 title: 'Final answer',
-                content: 'LangGraph is the runtime beneath DeepAgents.',
+                content: 'LangGraph is the **runtime** beneath DeepAgents.',
                 metadata: {},
               },
             ],
@@ -81,15 +81,18 @@ describe('App chat flow', () => {
 
     render(<App />)
 
+    await screen.findByText('Research Console')
     await user.type(await screen.findByLabelText('Message'), 'What is LangGraph?')
     await user.click(screen.getByRole('button', { name: 'Send prompt' }))
 
     expect(
-      await screen.findAllByText('LangGraph is the runtime beneath DeepAgents.'),
+      await screen.findAllByText(/LangGraph is the/i),
     ).toHaveLength(2)
     expect(await screen.findByText('Run trace')).toBeVisible()
     expect(await screen.findByText('Preparing web search')).toBeVisible()
     expect(await screen.findByText('Query: What is LangGraph?')).toBeVisible()
+    expect(screen.queryByText('{"query":"What is LangGraph?"}')).not.toBeInTheDocument()
+    expect(screen.getByText('runtime', { selector: 'strong' })).toBeVisible()
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })
