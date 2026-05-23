@@ -31,6 +31,9 @@ def test_normalize_message_content_falls_back_to_json() -> None:
 def test_analyst_system_prompt_requires_verified_citations_and_osir_format() -> None:
     assert "open-source intelligence analyst" in ANALYST_SYSTEM_PROMPT
     assert "Never invent, guess, or hallucinate a citation" in ANALYST_SYSTEM_PROMPT
+    assert "proceed directly instead of asking unnecessary clarifying questions" in ANALYST_SYSTEM_PROMPT
+    assert "choose reasonable default scope" in ANALYST_SYSTEM_PROMPT
+    assert 'If the user gives a short follow-up like "general"' in ANALYST_SYSTEM_PROMPT
     assert "Before drafting the final answer, verify every citation" in ANALYST_SYSTEM_PROMPT
     assert "Write the final response in Markdown." in ANALYST_SYSTEM_PROMPT
     assert "Use headings, bullet lists, numbered lists, and tables" in ANALYST_SYSTEM_PROMPT
