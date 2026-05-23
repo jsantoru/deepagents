@@ -4,15 +4,19 @@ services:
     container_name: deepagents-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: deepagents
-      POSTGRES_USER: deepagents
-      POSTGRES_PASSWORD: deepagents
+      POSTGRES_DB: ${POSTGRES_DB:-deepagents}
+      POSTGRES_USER: ${POSTGRES_USER:-deepagents}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-deepagents}
     ports:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U deepagents -d deepagents"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-deepagents} -d ${POSTGRES_DB:-deepagents}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -25,10 +29,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    env_file:
-      - ./backend/.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://deepagents:deepagents@postgres:5432/deepagents
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      TAVILY_API_KEY: ${TAVILY_API_KEY}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-deepagents}:${POSTGRES_PASSWORD:-deepagents}@postgres:5432/${POSTGRES_DB:-deepagents}
     ports:
       - "8000:8000"
 
@@ -40,7 +44,7 @@ services:
     depends_on:
       - backend
     environment:
-      VITE_API_BASE_URL: http://localhost:8000/api/v1
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api/v1}
     ports:
       - "5173:5173"
 

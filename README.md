@@ -24,14 +24,10 @@ Monorepo for a Python DeepAgents backend and a React/Vite frontend. The project 
 ### 1. Configure env files
 
 ```bash
-cd backend
-copy .env.example .env
-
-cd ..\frontend
 copy .env.example .env
 ```
 
-Set at least in `backend/.env`:
+Set at least in `.env`:
 
 - `OPENAI_API_KEY`
 - `TAVILY_API_KEY`
@@ -54,6 +50,7 @@ Services:
 cd backend
 uv python install 3.12
 uv sync
+copy .env.example .env
 
 uv run uvicorn deepagents_app.main:app --reload --port 8000
 ```
