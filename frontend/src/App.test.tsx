@@ -13,6 +13,26 @@ describe('App chat flow', () => {
         conversation_id: 'conversation-1',
         run_id: 'run-1',
         answer: 'LangGraph is the runtime beneath DeepAgents.',
+        trace: [
+          {
+            type: 'assistant',
+            title: 'Agent note',
+            content: 'I am checking the framework structure first.',
+            metadata: {},
+          },
+          {
+            type: 'tool',
+            title: 'Tool call: internet_search',
+            content: '{"query":"What is LangGraph?"}',
+            metadata: { tool_name: 'internet_search' },
+          },
+          {
+            type: 'final',
+            title: 'Final answer',
+            content: 'LangGraph is the runtime beneath DeepAgents.',
+            metadata: {},
+          },
+        ],
         metrics: {
           model_name: 'openai:gpt-4.1-mini',
           latency_ms: 340,
@@ -32,7 +52,11 @@ describe('App chat flow', () => {
     await user.type(await screen.findByLabelText('Message'), 'What is LangGraph?')
     await user.click(screen.getByRole('button', { name: 'Send prompt' }))
 
-    expect(await screen.findByText('LangGraph is the runtime beneath DeepAgents.')).toBeVisible()
+    expect(
+      await screen.findAllByText('LangGraph is the runtime beneath DeepAgents.'),
+    ).toHaveLength(2)
+    expect(await screen.findByText('Run trace')).toBeVisible()
+    expect(await screen.findByText('Tool call: internet_search')).toBeVisible()
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

@@ -6,6 +6,13 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = None
 
 
+class ChatTraceEvent(BaseModel):
+    type: str
+    title: str
+    content: str
+    metadata: dict[str, str | int | float] = Field(default_factory=dict)
+
+
 class ChatRunMetrics(BaseModel):
     model_name: str
     latency_ms: int
@@ -20,4 +27,5 @@ class ChatResponse(BaseModel):
     conversation_id: str
     run_id: str
     answer: str
+    trace: list[ChatTraceEvent]
     metrics: ChatRunMetrics

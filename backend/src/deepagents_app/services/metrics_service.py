@@ -48,6 +48,7 @@ class MetricsService:
             conversation_id=conversation.id,
             run_id=run.id,
             answer=agent_result.answer,
+            trace=agent_result.trace,
             metrics=self._to_metrics(run),
         )
 

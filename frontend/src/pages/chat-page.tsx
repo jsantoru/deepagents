@@ -1,5 +1,14 @@
 import { useState, type FormEvent } from 'react'
-import { ArrowUpRight, Clock3, Coins, Search, Sigma } from 'lucide-react'
+import {
+  ArrowUpRight,
+  Clock3,
+  Coins,
+  Search,
+  Sigma,
+  Bot,
+  Wrench,
+  Sparkles,
+} from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -7,12 +16,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
-import { type ChatMetrics, sendChatMessage } from '@/lib/api'
+import { type ChatMetrics, type ChatTraceEvent, sendChatMessage } from '@/lib/api'
 
 type TranscriptMessage = {
   id: string
   role: 'user' | 'assistant'
   content: string
+  trace?: ChatTraceEvent[]
   metrics?: ChatMetrics
 }
 
@@ -57,6 +67,7 @@ export function ChatPage() {
           id: response.run_id,
           role: 'assistant',
           content: response.answer,
+          trace: response.trace,
           metrics: response.metrics,
         },
       ])
@@ -123,6 +134,7 @@ export function ChatPage() {
                     {message.role === 'user' ? 'You' : 'Agent'}
                   </div>
                   <p className="whitespace-pre-wrap text-sm leading-7">{message.content}</p>
+                  {message.trace?.length ? <TraceTimeline trace={message.trace} /> : null}
                   {message.metrics ? <RunMetrics metrics={message.metrics} /> : null}
                 </article>
               ))
@@ -162,27 +174,75 @@ export function ChatPage() {
       <Card className="border-black/10 bg-stone-950 text-stone-50 shadow-[0_24px_80px_rgba(69,57,34,0.12)]">
         <CardHeader className="space-y-4">
           <Badge className="w-fit rounded-full border border-white/15 bg-white/10 px-3 py-1 text-white">
-            Run telemetry
+            Agent activity
           </Badge>
           <CardTitle className="text-3xl tracking-tight">
-            Every answer carries the operational signals needed for later optimization.
+            The main view now exposes intermediate agent notes and tool activity per run.
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 text-sm text-stone-300">
           <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-            Conversation continuity is automatic via the persisted `conversation_id`.
+            Assistant responses now include a normalized trace built from the DeepAgents message
+            stream.
           </div>
           <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-            The backend stores token counts, latency, estimated cost, and search activity for each
-            run.
+            Tool calls are surfaced inline so you can see when search ran and what the agent handed
+            to the tool.
           </div>
           <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-            The next slice turns these raw metrics into an operator dashboard.
+            Hidden chain-of-thought is not exposed, but observable agent events are.
           </div>
         </CardContent>
       </Card>
     </div>
   )
+}
+
+function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
+  return (
+    <div className="mt-5 space-y-3 border-t border-current/10 pt-4">
+      <div className="text-xs uppercase tracking-[0.24em] text-current/60">Run trace</div>
+      {trace.map((event, index) => {
+        const Icon = getTraceIcon(event.type)
+        return (
+          <div
+            key={`${event.type}-${index}-${event.title}`}
+            className="rounded-3xl border border-current/10 bg-black/3 px-4 py-4"
+          >
+            <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-current/60">
+              <Icon className="h-3.5 w-3.5" />
+              {event.title}
+            </div>
+            <p className="whitespace-pre-wrap text-sm leading-6">{event.content}</p>
+            {Object.keys(event.metadata).length ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {Object.entries(event.metadata).map(([key, value]) => (
+                  <Badge
+                    key={key}
+                    className="rounded-full border border-current/10 bg-transparent px-3 py-1 text-[11px] tracking-[0.18em] text-current/70"
+                    variant="outline"
+                  >
+                    {key}: {String(value)}
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function getTraceIcon(type: string) {
+  switch (type) {
+    case 'tool':
+      return Wrench
+    case 'final':
+      return Sparkles
+    default:
+      return Bot
+  }
 }
 
 function RunMetrics({ metrics }: { metrics: ChatMetrics }) {

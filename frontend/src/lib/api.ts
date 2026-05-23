@@ -8,10 +8,18 @@ export type ChatMetrics = {
   search_calls: number
 }
 
+export type ChatTraceEvent = {
+  type: string
+  title: string
+  content: string
+  metadata: Record<string, string | number>
+}
+
 export type ChatResponse = {
   conversation_id: string
   run_id: string
   answer: string
+  trace: ChatTraceEvent[]
   metrics: ChatMetrics
 }
 

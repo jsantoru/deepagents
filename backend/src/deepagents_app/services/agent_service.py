@@ -9,12 +9,13 @@ from deepagents import create_deep_agent
 from tavily import TavilyClient
 
 from deepagents_app.core.config import get_settings
-from deepagents_app.schemas.chat import ChatRequest
+from deepagents_app.schemas.chat import ChatRequest, ChatTraceEvent
 
 
 @dataclass(slots=True)
 class AgentRunResult:
     answer: str
+    trace: list[ChatTraceEvent]
     model_name: str
     input_tokens: int
     output_tokens: int
@@ -83,6 +84,7 @@ class DeepAgentsService(AgentService):
         )
         return AgentRunResult(
             answer=answer,
+            trace=_extract_trace_events(result["messages"]),
             model_name=model_name,
             input_tokens=usage.get("input_tokens", 0),
             output_tokens=usage.get("output_tokens", 0),
@@ -117,3 +119,53 @@ def _normalize_message_content(content: object) -> str:
             return "\n".join(chunk.strip() for chunk in text_chunks if chunk and chunk.strip())
 
     return json.dumps(content, ensure_ascii=True, default=str)
+
+
+def _extract_trace_events(messages: Sequence[object]) -> list[ChatTraceEvent]:
+    events: list[ChatTraceEvent] = []
+
+    for index, message in enumerate(messages):
+        role = getattr(message, "type", None) or getattr(message, "role", None)
+        name = getattr(message, "name", None)
+        content = _normalize_message_content(getattr(message, "content", ""))
+        if not content.strip():
+            continue
+
+        if index == 0 and role == "human":
+            continue
+
+        if role in {"tool", "tool_message"} or name:
+            metadata: dict[str, str | int | float] = {}
+            if name:
+                metadata["tool_name"] = str(name)
+            events.append(
+                ChatTraceEvent(
+                    type="tool",
+                    title=f"Tool call: {name or 'tool'}",
+                    content=content,
+                    metadata=metadata,
+                )
+            )
+            continue
+
+        if role in {"ai", "assistant"}:
+            title = "Final answer" if index == len(messages) - 1 else "Agent note"
+            event_type = "final" if index == len(messages) - 1 else "assistant"
+            events.append(
+                ChatTraceEvent(
+                    type=event_type,
+                    title=title,
+                    content=content,
+                )
+            )
+            continue
+
+        events.append(
+            ChatTraceEvent(
+                type=str(role or "message"),
+                title=f"Agent event {index + 1}",
+                content=content,
+            )
+        )
+
+    return events
