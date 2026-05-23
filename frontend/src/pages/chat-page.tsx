@@ -317,7 +317,8 @@ type TraceDisplay = {
 
 function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
   if (event.type === 'assistant' || event.type === 'assistant_delta') {
-    const parsed = tryParseJson(event.content)
+    const normalizedContent = unwrapStructuredToolContent(event.content)
+    const parsed = tryParseJson(normalizedContent)
     if (Array.isArray(parsed)) {
       const toolCalls = parsed.filter(isFunctionCallRecord)
       const reasoningSteps = parsed.filter(
@@ -342,11 +343,11 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
       }
     }
 
-    if (looksLikeJsonFragment(event.content)) {
+    if (looksLikeJsonFragment(normalizedContent)) {
       return {
         title: 'Planning next steps',
         summary: 'Reasoning through the next step.',
-        bullets: extractSearchQueriesFromJsonText(event.content).map((query) => `Search: ${query}`),
+        bullets: extractSearchQueriesFromJsonText(normalizedContent).map((query) => `Search: ${query}`),
         links: [],
         metadata: event.metadata,
       }
@@ -354,7 +355,8 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
   }
 
   if (event.type === 'tool' || event.type === 'tool_result' || event.type === 'tool_delta') {
-    const parsed = tryParseJson(event.content)
+    const normalizedContent = unwrapStructuredToolContent(event.content)
+    const parsed = tryParseJson(normalizedContent)
     if (isRecord(parsed)) {
       if ('query' in parsed && Array.isArray(parsed.results)) {
         const bullets = parsed.results
@@ -422,11 +424,16 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
       }
     }
 
-    if (event.type === 'tool_delta' && looksLikeJsonFragment(event.content)) {
-      const queries = extractSearchQueriesFromJsonText(event.content)
+    if (looksLikeJsonFragment(normalizedContent)) {
+      const queries = extractSearchQueriesFromJsonText(normalizedContent)
       return {
-        title: 'Searching the web',
-        summary: queries[0] ? `Query: ${queries[0]}` : 'Receiving search results...',
+        title: event.type === 'tool_result' ? 'Search results' : 'Searching the web',
+        summary:
+          queries[0]
+            ? `Query: ${queries[0]}`
+            : event.type === 'tool_result'
+              ? 'Search results received.'
+              : 'Receiving search results...',
         bullets: [],
         links: [],
         metadata: event.metadata,
@@ -476,6 +483,20 @@ function looksLikeJsonFragment(value: string): boolean {
 
 function extractSearchQueriesFromJsonText(value: string): string[] {
   return Array.from(value.matchAll(/"query"\s*:\s*"([^"]+)"/g), (match) => match[1])
+}
+
+function unwrapStructuredToolContent(value: string): string {
+  const singleQuotedMatch = value.match(/content='([\s\S]*?)'\s+(?:name|tool_call_id)=/)
+  if (singleQuotedMatch) {
+    return singleQuotedMatch[1]
+  }
+
+  const doubleQuotedMatch = value.match(/content="([\s\S]*?)"\s+(?:name|tool_call_id)=/)
+  if (doubleQuotedMatch) {
+    return doubleQuotedMatch[1]
+  }
+
+  return value
 }
 
 function applyTraceEvent(trace: ChatTraceEvent[], incomingEvent: ChatTraceEvent): ChatTraceEvent[] {

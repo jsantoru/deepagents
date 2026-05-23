@@ -28,9 +28,10 @@ describe('App chat flow', () => {
           event: 'trace',
           data: {
             id: 'tool-1',
-            type: 'tool',
-            title: 'Tool call: internet_search',
-            content: '{"query":"What is LangGraph?"}',
+            type: 'tool_result',
+            title: 'Tool result: internet_search',
+            content:
+              `content='{"query":"What is LangGraph?","results":[{"url":"https://example.com/langgraph","title":"LangGraph docs","content":"LangGraph is the runtime for stateful agent workflows.","score":0.99}],"response_time":0.42}' name='internet_search' tool_call_id='call_123'`,
             metadata: { tool_name: 'internet_search' },
           },
         },
@@ -50,9 +51,10 @@ describe('App chat flow', () => {
               },
               {
                 id: 'tool-1',
-                type: 'tool',
-                title: 'Tool call: internet_search',
-                content: '{"query":"What is LangGraph?"}',
+                type: 'tool_result',
+                title: 'Tool result: internet_search',
+                content:
+                  `content='{"query":"What is LangGraph?","results":[{"url":"https://example.com/langgraph","title":"LangGraph docs","content":"LangGraph is the runtime for stateful agent workflows.","score":0.99}],"response_time":0.42}' name='internet_search' tool_call_id='call_123'`,
                 metadata: { tool_name: 'internet_search' },
               },
               {
@@ -85,14 +87,12 @@ describe('App chat flow', () => {
     await user.type(await screen.findByLabelText('Message'), 'What is LangGraph?')
     await user.click(screen.getByRole('button', { name: 'Send prompt' }))
 
-    expect(
-      await screen.findAllByText(/LangGraph is the/i),
-    ).toHaveLength(2)
     expect(await screen.findByText('Run trace')).toBeVisible()
-    expect(await screen.findByText('Preparing web search')).toBeVisible()
+    expect(await screen.findByText('Search results')).toBeVisible()
     expect(await screen.findByText('Query: What is LangGraph?')).toBeVisible()
-    expect(screen.queryByText('{"query":"What is LangGraph?"}')).not.toBeInTheDocument()
-    expect(screen.getByText('runtime', { selector: 'strong' })).toBeVisible()
+    expect(await screen.findByText(/LangGraph docs:/)).toBeVisible()
+    expect(screen.queryByText(/tool_call_id='call_123'/)).not.toBeInTheDocument()
+    expect(await screen.findByText('runtime', { selector: 'strong' })).toBeVisible()
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })
