@@ -1,10 +1,15 @@
+import asyncio
+import contextlib
+import json
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 
 from deepagents_app.api.deps import get_agent_service, get_db_session
 from deepagents_app.schemas.admin import AdminOverviewResponse, AdminRunListResponse
-from deepagents_app.schemas.chat import ChatRequest, ChatResponse
+from deepagents_app.schemas.chat import ChatRequest, ChatResponse, ChatTraceEvent
 from deepagents_app.services.agent_service import AgentService
 from deepagents_app.services.metrics_service import MetricsService
 
@@ -26,6 +31,51 @@ async def chat(
     return await metrics_service.run_chat(payload=payload, agent_service=agent_service)
 
 
+@api_router.post("/chat/stream", tags=["chat"])
+async def chat_stream(
+    payload: ChatRequest,
+    agent_service: AgentService = Depends(get_agent_service),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> StreamingResponse:
+    metrics_service = MetricsService(db_session)
+
+    async def event_generator():
+        queue: asyncio.Queue[tuple[str, object | None]] = asyncio.Queue()
+
+        async def on_event(event: ChatTraceEvent) -> None:
+            await queue.put(("trace", event))
+
+        async def run_agent() -> None:
+            try:
+                response = await metrics_service.run_chat_stream(
+                    payload=payload,
+                    agent_service=agent_service,
+                    on_event=on_event,
+                )
+                await queue.put(("final", response))
+            except Exception as exc:
+                await queue.put(("error", {"message": str(exc)}))
+            finally:
+                await queue.put(("done", None))
+
+        task = asyncio.create_task(run_agent())
+
+        try:
+            yield _format_sse("status", {"state": "started"})
+            while True:
+                event_type, data = await queue.get()
+                if event_type == "done":
+                    break
+                yield _format_sse(event_type, data)
+        finally:
+            if not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 @api_router.get("/admin/overview", response_model=AdminOverviewResponse, tags=["admin"])
 async def admin_overview(
     db_session: AsyncSession = Depends(get_db_session),
@@ -41,3 +91,11 @@ async def admin_runs(
 ) -> AdminRunListResponse:
     metrics_service = MetricsService(db_session)
     return await metrics_service.list_runs(limit=limit)
+
+
+def _format_sse(event: str, data: object) -> str:
+    if hasattr(data, "model_dump"):
+        payload = data.model_dump()
+    else:
+        payload = data
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=True, default=str)}\n\n"

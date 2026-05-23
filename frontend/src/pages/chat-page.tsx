@@ -14,9 +14,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
-import { type ChatMetrics, type ChatTraceEvent, sendChatMessage } from '@/lib/api'
+import { type ChatMetrics, type ChatTraceEvent, streamChatMessage } from '@/lib/api'
 
 type TranscriptMessage = {
   id: string
@@ -52,26 +51,56 @@ export function ChatPage() {
       role: 'user',
       content: trimmedDraft,
     }
+    const pendingAssistantId = crypto.randomUUID()
+    const pendingAssistant: TranscriptMessage = {
+      id: pendingAssistantId,
+      role: 'assistant',
+      content: '',
+      trace: [],
+    }
 
-    setMessages((currentMessages) => [...currentMessages, optimisticMessage])
+    setMessages((currentMessages) => [...currentMessages, optimisticMessage, pendingAssistant])
     setDraft('')
     setError(undefined)
     setIsSending(true)
 
     try {
-      const response = await sendChatMessage(trimmedDraft, conversationId)
-      setConversationId(response.conversation_id)
-      setMessages((currentMessages) => [
-        ...currentMessages,
-        {
-          id: response.run_id,
-          role: 'assistant',
-          content: response.answer,
-          trace: response.trace,
-          metrics: response.metrics,
+      const response = await streamChatMessage(trimmedDraft, conversationId, {
+        onTrace: (event) => {
+          setMessages((currentMessages) =>
+            currentMessages.map((message) =>
+              message.id === pendingAssistantId
+                ? {
+                    ...message,
+                    content: updateAssistantContent(message.content, event),
+                    trace: applyTraceEvent(message.trace ?? [], event),
+                  }
+                : message,
+            ),
+          )
         },
-      ])
+        onFinal: (finalResponse) => {
+          setConversationId(finalResponse.conversation_id)
+          setMessages((currentMessages) =>
+            currentMessages.map((message) =>
+              message.id === pendingAssistantId
+                ? {
+                    id: finalResponse.run_id,
+                    role: 'assistant',
+                    content: finalResponse.answer,
+                    trace: finalResponse.trace,
+                    metrics: finalResponse.metrics,
+                  }
+                : message,
+            ),
+          )
+        },
+      })
+      setConversationId(response.conversation_id)
     } catch (requestError) {
+      setMessages((currentMessages) =>
+        currentMessages.filter((message) => message.id !== pendingAssistantId),
+      )
       setError(requestError instanceof Error ? requestError.message : 'Unknown request failure.')
     } finally {
       setIsSending(false)
@@ -140,13 +169,6 @@ export function ChatPage() {
               ))
             )}
 
-            {isSending ? (
-              <div className="space-y-3 rounded-[28px] border border-black/10 bg-white p-5">
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-4/5" />
-              </div>
-            ) : null}
           </div>
 
           <form className="space-y-3" onSubmit={handleSubmit}>
@@ -213,12 +235,40 @@ function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
 function getTraceIcon(type: string) {
   switch (type) {
     case 'tool':
+    case 'tool_result':
+    case 'tool_delta':
+    case 'tool_error':
       return Wrench
     case 'final':
       return Sparkles
     default:
       return Bot
   }
+}
+
+function applyTraceEvent(trace: ChatTraceEvent[], incomingEvent: ChatTraceEvent): ChatTraceEvent[] {
+  const eventIndex = trace.findIndex((event) => event.id === incomingEvent.id)
+  if (eventIndex === -1) {
+    return [...trace, incomingEvent]
+  }
+
+  const currentEvent = trace[eventIndex]
+  const updatedEvent =
+    incomingEvent.type === 'assistant_delta' || incomingEvent.type === 'tool_delta'
+      ? {
+          ...currentEvent,
+          content: `${currentEvent.content}${incomingEvent.content}`,
+        }
+      : incomingEvent
+
+  return trace.map((event, index) => (index === eventIndex ? updatedEvent : event))
+}
+
+function updateAssistantContent(content: string, event: ChatTraceEvent): string {
+  if (event.type === 'final' || event.type === 'assistant' || event.type === 'assistant_delta') {
+    return content ? `${content}${event.content}` : event.content
+  }
+  return content
 }
 
 function RunMetrics({ metrics }: { metrics: ChatMetrics }) {

@@ -9,18 +9,21 @@ def test_chat_endpoint_returns_answer(client) -> None:
     assert payload["run_id"]
     assert payload["trace"] == [
         {
+            "id": "note-1",
             "type": "assistant",
             "title": "Agent note",
             "content": "Searching for relevant information.",
             "metadata": {},
         },
         {
+            "id": "tool-1",
             "type": "tool",
             "title": "Tool call: internet_search",
             "content": '{"query":"hello"}',
             "metadata": {"tool_name": "internet_search"},
         },
         {
+            "id": "final-1",
             "type": "final",
             "title": "Final answer",
             "content": "echo: hello",

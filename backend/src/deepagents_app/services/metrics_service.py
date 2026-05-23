@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from time import perf_counter
 
@@ -11,7 +12,7 @@ from deepagents_app.schemas.admin import (
     AdminRunListResponse,
     AdminRunSummary,
 )
-from deepagents_app.schemas.chat import ChatRequest, ChatResponse, ChatRunMetrics
+from deepagents_app.schemas.chat import ChatRequest, ChatResponse, ChatRunMetrics, ChatTraceEvent
 from deepagents_app.services.agent_service import AgentRunResult, AgentService
 
 
@@ -32,20 +33,40 @@ class MetricsService:
         started_at = perf_counter()
         agent_result = await agent_service.chat(payload)
         latency_ms = int((perf_counter() - started_at) * 1000)
+        return await self._finalize_chat(conversation.id, agent_result, latency_ms)
 
-        run = await self._persist_run(conversation.id, agent_result, latency_ms)
+    async def run_chat_stream(
+        self,
+        payload: ChatRequest,
+        agent_service: AgentService,
+        on_event: Callable[[ChatTraceEvent], Awaitable[None]],
+    ) -> ChatResponse:
+        conversation = await self._get_or_create_conversation(payload.conversation_id)
+        self.session.add(Message(conversation_id=conversation.id, role="user", content=payload.message))
+
+        started_at = perf_counter()
+        agent_result = await agent_service.stream_chat(payload, on_event)
+        latency_ms = int((perf_counter() - started_at) * 1000)
+        return await self._finalize_chat(conversation.id, agent_result, latency_ms)
+
+    async def _finalize_chat(
+        self,
+        conversation_id: str,
+        agent_result: AgentRunResult,
+        latency_ms: int,
+    ) -> ChatResponse:
+        run = await self._persist_run(conversation_id, agent_result, latency_ms)
         self.session.add(
             Message(
-                conversation_id=conversation.id,
+                conversation_id=conversation_id,
                 run_id=run.id,
                 role="assistant",
                 content=agent_result.answer,
             )
         )
         await self.session.commit()
-
         return ChatResponse(
-            conversation_id=conversation.id,
+            conversation_id=conversation_id,
             run_id=run.id,
             answer=agent_result.answer,
             trace=agent_result.trace,

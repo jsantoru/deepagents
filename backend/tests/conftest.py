@@ -1,4 +1,4 @@
-from collections.abc import Generator
+from collections.abc import Awaitable, Callable, Generator
 from pathlib import Path
 
 import pytest
@@ -18,22 +18,72 @@ class StubAgentService(AgentService):
             answer=f"echo: {payload.message}",
             trace=[
                 ChatTraceEvent(
+                    id="note-1",
                     type="assistant",
                     title="Agent note",
                     content="Searching for relevant information.",
                 ),
                 ChatTraceEvent(
+                    id="tool-1",
                     type="tool",
                     title="Tool call: internet_search",
                     content='{"query":"hello"}',
                     metadata={"tool_name": "internet_search"},
                 ),
                 ChatTraceEvent(
+                    id="final-1",
                     type="final",
                     title="Final answer",
                     content=f"echo: {payload.message}",
                 ),
             ],
+            model_name="openai:gpt-5-nano",
+            input_tokens=11,
+            output_tokens=7,
+            total_tokens=18,
+            search_calls=1,
+            raw_payload={"messages": []},
+        )
+
+    async def stream_chat(
+        self,
+        payload: ChatRequest,
+        on_event: Callable[[ChatTraceEvent], Awaitable[None]],
+    ) -> AgentRunResult:
+        trace = [
+            ChatTraceEvent(
+                id="note-1",
+                type="assistant",
+                title="Agent note",
+                content="Searching for relevant information.",
+            ),
+            ChatTraceEvent(
+                id="tool-1",
+                type="tool",
+                title="Tool call: internet_search",
+                content='{"query":"hello"}',
+                metadata={"tool_name": "internet_search"},
+            ),
+            ChatTraceEvent(
+                id="tool-1",
+                type="tool_result",
+                title="Tool result: internet_search",
+                content='{"results":[{"title":"Example"}]}',
+                metadata={"tool_name": "internet_search"},
+            ),
+            ChatTraceEvent(
+                id="final-1",
+                type="final",
+                title="Final answer",
+                content=f"echo: {payload.message}",
+            ),
+        ]
+        for event in trace[:-1]:
+            await on_event(event)
+
+        return AgentRunResult(
+            answer=f"echo: {payload.message}",
+            trace=trace,
             model_name="openai:gpt-5-nano",
             input_tokens=11,
             output_tokens=7,
