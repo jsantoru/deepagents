@@ -29,7 +29,7 @@ describe('App chat flow', () => {
 
     render(<App />)
 
-    await user.type(screen.getByLabelText('Message'), 'What is LangGraph?')
+    await user.type(await screen.findByLabelText('Message'), 'What is LangGraph?')
     await user.click(screen.getByRole('button', { name: 'Send prompt' }))
 
     expect(await screen.findByText('LangGraph is the runtime beneath DeepAgents.')).toBeVisible()

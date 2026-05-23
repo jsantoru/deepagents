@@ -1,8 +1,18 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom'
 import { Bot, ChartColumnBig, SearchCode } from 'lucide-react'
 
-import { ChatPage } from '@/pages/chat-page'
-import { AdminPlaceholderPage } from '@/pages/admin-placeholder-page'
+import { Skeleton } from '@/components/ui/skeleton'
+
+const ChatPage = lazy(async () => {
+  const module = await import('@/pages/chat-page')
+  return { default: module.ChatPage }
+})
+
+const AdminPage = lazy(async () => {
+  const module = await import('@/pages/admin-page')
+  return { default: module.AdminPage }
+})
 
 const navigationItems = [
   { to: '/', label: 'Chat', icon: SearchCode },
@@ -46,14 +56,25 @@ function App() {
           </header>
 
           <main className="flex-1">
-            <Routes>
-              <Route path="/" element={<ChatPage />} />
-              <Route path="/admin" element={<AdminPlaceholderPage />} />
-            </Routes>
+            <Suspense fallback={<RouteSkeleton />}>
+              <Routes>
+                <Route path="/" element={<ChatPage />} />
+                <Route path="/admin" element={<AdminPage />} />
+              </Routes>
+            </Suspense>
           </main>
         </div>
       </div>
     </BrowserRouter>
+  )
+}
+
+function RouteSkeleton() {
+  return (
+    <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+      <Skeleton className="h-[620px] rounded-[32px]" />
+      <Skeleton className="h-[620px] rounded-[32px]" />
+    </div>
   )
 }
 
