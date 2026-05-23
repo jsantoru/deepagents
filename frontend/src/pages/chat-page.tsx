@@ -3,16 +3,19 @@ import {
   AlertCircle,
   ArrowUp,
   Bot,
+  ChartColumnBig,
   Clock3,
   Coins,
   ExternalLink,
-  FolderGit2,
-  GitBranch,
+  FolderOpen,
   Globe,
+  LibraryBig,
   LoaderCircle,
+  MessageSquarePlus,
   Mic,
-  Monitor,
+  PanelsTopLeft,
   Plus,
+  ScrollText,
   Search,
   Sigma,
   Sparkles,
@@ -21,6 +24,7 @@ import {
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { NavLink } from 'react-router-dom'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -28,6 +32,9 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   type ChatMetrics,
   type ChatTraceEvent,
+  fetchConversationDetail,
+  fetchConversationSummaries,
+  type ConversationSummary,
   type ResearchMode,
   streamChatMessage,
 } from '@/lib/api'
@@ -43,28 +50,31 @@ type TranscriptMessage = {
 const starterPrompts = [
   {
     icon: Search,
-    text: 'Review my recent commits for correctness risks and maintainability concerns',
+    text: 'Compare the latest US inflation, unemployment, and wage growth trends and explain where they conflict',
   },
   {
-    icon: GitBranch,
-    text: 'Unblock my most recent open PR',
+    icon: Globe,
+    text: 'Research the current competitive landscape for AI coding agents and summarize the top vendors',
   },
   {
     icon: Sparkles,
-    text: 'Connect your favorite apps to Codex',
+    text: 'Build a source-backed brief on whether nuclear energy capacity is growing or shrinking globally',
   },
 ]
 
 const chromeItems = [
-  { icon: FolderGit2, label: 'Deep research' },
-  { icon: Monitor, label: 'Web sources' },
-  { icon: GitBranch, label: 'Citations ready' },
+  { icon: LibraryBig, label: 'Deep research' },
+  { icon: Globe, label: 'Web sources' },
+  { icon: ScrollText, label: 'Citations ready' },
 ]
 
 export function ChatPage() {
   const [conversationId, setConversationId] = useState<string>()
+  const [conversationTitle, setConversationTitle] = useState('New chat')
   const [draft, setDraft] = useState('')
   const [messages, setMessages] = useState<TranscriptMessage[]>([])
+  const [sessions, setSessions] = useState<ConversationSummary[]>([])
+  const [isLoadingSessions, setIsLoadingSessions] = useState(true)
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string>()
   const [lastSubmittedPrompt, setLastSubmittedPrompt] = useState('')
@@ -79,6 +89,60 @@ export function ChatPage() {
       bottomAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
     }
   }, [isComposerDocked, messages.length])
+
+  useEffect(() => {
+    void loadConversationSummaries()
+  }, [])
+
+  async function loadConversationSummaries(selectedId?: string) {
+    setIsLoadingSessions(true)
+    try {
+      const response = await fetchConversationSummaries()
+      setSessions(response.conversations)
+
+      const activeConversationId = selectedId ?? conversationId
+      const activeConversation = response.conversations.find(
+        (conversation) => conversation.conversation_id === activeConversationId,
+      )
+      if (activeConversation) {
+        setConversationTitle(activeConversation.title)
+      }
+    } catch (historyError) {
+      setError(
+        historyError instanceof Error ? historyError.message : 'Unknown history loading failure.',
+      )
+    } finally {
+      setIsLoadingSessions(false)
+    }
+  }
+
+  async function handleOpenConversation(targetConversationId: string) {
+    if (isSending) {
+      return
+    }
+
+    setError(undefined)
+    const response = await fetchConversationDetail(targetConversationId)
+    setConversationId(response.conversation_id)
+    setConversationTitle(response.title)
+    setMessages(
+      response.messages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        metrics: message.metrics ?? undefined,
+      })),
+    )
+  }
+
+  function handleNewChat() {
+    setConversationId(undefined)
+    setConversationTitle('New chat')
+    setMessages([])
+    setDraft('')
+    setError(undefined)
+    setLastSubmittedPrompt('')
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -103,6 +167,9 @@ export function ChatPage() {
 
     setMessages((currentMessages) => [...currentMessages, optimisticMessage, pendingAssistant])
     setLastSubmittedPrompt(trimmedDraft)
+    if (!conversationId) {
+      setConversationTitle(deriveConversationTitle(trimmedDraft))
+    }
     setDraft('')
     setError(undefined)
     setIsSending(true)
@@ -137,6 +204,7 @@ export function ChatPage() {
                 : message,
             ),
           )
+          void loadConversationSummaries(finalResponse.conversation_id)
         },
       })
       setConversationId(response.conversation_id)
@@ -151,55 +219,79 @@ export function ChatPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 pb-6 pt-10 sm:px-6">
-      <div
-        className={[
-          'transition-all duration-300',
-          isComposerDocked ? 'flex-1 pb-[22rem] sm:pb-[20rem]' : 'flex flex-1 flex-col justify-center pb-16',
-        ].join(' ')}
-      >
-        {!isComposerDocked ? (
-          <section className="mx-auto w-full max-w-5xl">
-            <h1 className="mb-10 text-center text-4xl font-medium tracking-tight text-stone-900 sm:text-5xl">
-              What should we build in deepagents?
-            </h1>
-            <PromptComposer
-              draft={draft}
-              error={error}
-              isDocked={false}
-              isSending={isSending}
-              lastSubmittedPrompt={lastSubmittedPrompt}
-              onChange={setDraft}
-              onModeChange={setResearchMode}
-              onSubmit={handleSubmit}
-              researchMode={researchMode}
-            />
-            <div className="mt-6">
-              {starterPrompts.map(({ icon: Icon, text }) => (
-                <button
-                  key={text}
-                  type="button"
-                  className="flex w-full items-center gap-3 border-t border-stone-200/90 py-5 text-left text-lg text-stone-500 transition hover:text-stone-900"
-                  onClick={() => setDraft(text)}
-                >
-                  <Icon className="h-5 w-5 text-stone-400" />
-                  <span>{text}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-        ) : (
-          <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6">
-            <ConversationMessages messages={messages} />
-            <div ref={bottomAnchorRef} />
-          </section>
-        )}
-      </div>
+    <div className="grid h-screen w-full grid-cols-1 gap-6 overflow-hidden px-4 sm:px-6 lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-0 lg:px-0">
+      <aside className="hidden border-r border-stone-200/80 bg-white/72 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden">
+        <SidebarNav
+          activeConversationId={conversationId}
+          conversations={sessions}
+          isLoading={isLoadingSessions}
+          onNewChat={handleNewChat}
+          onOpenConversation={handleOpenConversation}
+        />
+      </aside>
 
-      {isComposerDocked ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-4 pb-4 sm:px-6">
-          <div className="mx-auto w-full max-w-5xl rounded-[32px] bg-[linear-gradient(180deg,rgba(249,249,247,0),rgba(249,249,247,0.94)_24%,rgba(249,249,247,0.98)_100%)] pt-8">
-            <div className="pointer-events-auto">
+      <section className="flex h-screen min-h-0 flex-col overflow-hidden pb-4 pt-8 lg:px-8 lg:pt-6">
+        {isComposerDocked ? (
+          <header className="mb-6 flex items-center justify-between">
+            <div className="min-w-0">
+              <h2 className="truncate text-2xl font-semibold tracking-tight text-stone-950">
+                {conversationTitle}
+              </h2>
+              <p className="text-sm text-stone-500">deepagents</p>
+            </div>
+          </header>
+        ) : null}
+
+        <div
+          className={[
+            'min-h-0 transition-all duration-300',
+            isComposerDocked
+              ? 'flex-1 overflow-y-auto pb-8'
+              : 'flex flex-1 flex-col justify-center overflow-y-auto pb-16',
+          ].join(' ')}
+        >
+          {!isComposerDocked ? (
+            <section className="mx-auto w-full max-w-5xl">
+              <h1 className="mb-10 text-center text-4xl font-medium tracking-tight text-stone-900 sm:text-5xl">
+                What are we researching?
+              </h1>
+              <PromptComposer
+                draft={draft}
+                error={error}
+                isDocked={false}
+                isSending={isSending}
+                lastSubmittedPrompt={lastSubmittedPrompt}
+                onChange={setDraft}
+                onModeChange={setResearchMode}
+                onSubmit={handleSubmit}
+                researchMode={researchMode}
+              />
+              <div className="mt-6">
+                {starterPrompts.map(({ icon: Icon, text }) => (
+                  <button
+                    key={text}
+                    type="button"
+                    className="flex w-full items-center gap-3 border-t border-stone-200/90 py-5 text-left text-lg text-stone-500 transition hover:text-stone-900"
+                    onClick={() => setDraft(text)}
+                  >
+                    <Icon className="h-5 w-5 text-stone-400" />
+                    <span>{text}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : (
+            <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6">
+              <ConversationMessages messages={messages} />
+              <div ref={bottomAnchorRef} />
+            </section>
+          )}
+        </div>
+
+        {isComposerDocked ? (
+          <div className="sticky bottom-0 z-20 pt-8">
+            <div className="mx-auto w-full max-w-5xl rounded-[32px] bg-[linear-gradient(180deg,rgba(249,249,247,0),rgba(249,249,247,0.94)_24%,rgba(249,249,247,0.98)_100%)]">
+              <div className="pt-6">
               <PromptComposer
                 draft={draft}
                 error={error}
@@ -211,11 +303,122 @@ export function ChatPage() {
                 onSubmit={handleSubmit}
                 researchMode={researchMode}
               />
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </section>
+    </div>
+  )
+}
+
+function SidebarNav({
+  activeConversationId,
+  conversations,
+  isLoading,
+  onNewChat,
+  onOpenConversation,
+}: {
+  activeConversationId?: string
+  conversations: ConversationSummary[]
+  isLoading: boolean
+  onNewChat: () => void
+  onOpenConversation: (conversationId: string) => void
+}) {
+  return (
+    <div className="flex h-full min-h-0 flex-col px-4 py-5">
+      <div className="space-y-2">
+        <button
+          type="button"
+          className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-[1.05rem] text-stone-800 transition hover:bg-stone-100"
+          onClick={onNewChat}
+        >
+          <MessageSquarePlus className="h-5 w-5 text-stone-500" />
+          <span>New chat</span>
+        </button>
+        <SidebarUtility icon={Search} label="Search" />
+        <SidebarUtility icon={PanelsTopLeft} label="Saved briefs" />
+        <SidebarUtility icon={Clock3} label="Automations" />
+        <SidebarUtility icon={ChartColumnBig} label="Admin dashboard" to="/admin" />
+      </div>
+
+      <div className="mt-10 min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="mb-4 px-3 text-sm font-medium text-stone-400">Projects</div>
+        <div className="space-y-5">
+          <div>
+            <div className="mb-2 flex items-center gap-2 px-3 text-[1.05rem] text-stone-700">
+              <FolderOpen className="h-5 w-5 text-stone-400" />
+              <span>deepagents</span>
+            </div>
+            <div className="space-y-1">
+              {isLoading ? (
+                <div className="px-3 py-2 text-sm text-stone-400">Loading sessions...</div>
+              ) : conversations.length === 0 ? (
+                <div className="px-3 py-2 text-sm text-stone-400">No sessions yet</div>
+              ) : (
+                conversations.map((conversation) => (
+                  <button
+                    key={conversation.conversation_id}
+                    type="button"
+                    className={[
+                      'flex w-full items-center justify-between rounded-2xl px-3 py-3 text-left transition',
+                      activeConversationId === conversation.conversation_id
+                        ? 'bg-stone-100 text-stone-950'
+                        : 'text-stone-700 hover:bg-stone-50',
+                    ].join(' ')}
+                    onClick={() => onOpenConversation(conversation.conversation_id)}
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-[1rem]">{conversation.title}</div>
+                      <div className="truncate text-sm text-stone-400">{conversation.preview}</div>
+                    </div>
+                    <div className="ml-3 shrink-0 text-sm text-stone-400">
+                      {formatRelativeTime(conversation.last_message_at)}
+                    </div>
+                  </button>
+                ))
+              )}
             </div>
           </div>
         </div>
-      ) : null}
+      </div>
+
+      <div className="border-t border-stone-200 px-3 py-4 text-sm text-stone-400">
+        Session history
+      </div>
     </div>
+  )
+}
+
+function SidebarUtility({
+  icon: Icon,
+  label,
+  to,
+}: {
+  icon: typeof Search
+  label: string
+  to?: string
+}) {
+  if (to) {
+    return (
+      <NavLink
+        to={to}
+        className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-[1.05rem] text-stone-700 transition hover:bg-stone-100"
+      >
+        <Icon className="h-5 w-5 text-stone-500" />
+        <span>{label}</span>
+      </NavLink>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-[1.05rem] text-stone-700 transition hover:bg-stone-100"
+    >
+      <Icon className="h-5 w-5 text-stone-500" />
+      <span>{label}</span>
+    </button>
   )
 }
 
@@ -243,7 +446,7 @@ function PromptComposer({
   researchMode,
 }: PromptComposerProps) {
   const disabled = isSending
-  const placeholder = isDocked ? 'Ask for follow-up changes' : 'Message Codex'
+  const placeholder = isDocked ? 'Ask for follow-up changes' : 'Ask anything...'
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== 'Enter' || event.shiftKey) {
@@ -404,11 +607,7 @@ function MessageBody({ message }: { message: TranscriptMessage }) {
   }
 
   if (message.role === 'assistant') {
-    return (
-      <div className="prose prose-sm max-w-none whitespace-pre-wrap prose-headings:mt-4 prose-headings:text-stone-950 prose-p:leading-7 prose-li:leading-7 prose-strong:text-stone-950 prose-code:rounded prose-code:bg-stone-100 prose-code:px-1 prose-code:py-0.5 prose-pre:bg-stone-950 prose-pre:text-stone-50">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
-      </div>
-    )
+    return <MarkdownReport content={message.content} />
   }
 
   return <p className="whitespace-pre-wrap text-sm leading-7">{message.content}</p>
@@ -418,7 +617,7 @@ function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
   const orderedTrace = orderTraceEvents(trace)
 
   return (
-    <div className="mt-5 space-y-3 border-t border-current/10 pt-4">
+    <div className="mt-5 space-y-3 pt-1">
       {orderedTrace.map((event, index) => {
         const Icon = getTraceIcon(event.type)
         const display = formatTraceEvent(event)
@@ -515,11 +714,7 @@ function TraceSummary({
   summary: string
 }) {
   if (event.type === 'final') {
-    return (
-      <div className="prose prose-sm max-w-none whitespace-pre-wrap prose-headings:mt-4 prose-headings:text-stone-950 prose-p:leading-7 prose-li:leading-7 prose-strong:text-stone-950 prose-code:rounded prose-code:bg-stone-100 prose-code:px-1 prose-code:py-0.5 prose-pre:bg-stone-950 prose-pre:text-stone-50">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{summary}</ReactMarkdown>
-      </div>
-    )
+    return <MarkdownReport content={summary} />
   }
 
   return (
@@ -531,6 +726,16 @@ function TraceSummary({
     >
       {summary}
     </p>
+  )
+}
+
+function MarkdownReport({ content }: { content: string }) {
+  const normalizedContent = normalizeReportMarkdown(content)
+
+  return (
+    <div className="prose prose-sm max-w-none text-stone-900 prose-headings:mb-3 prose-headings:font-semibold prose-headings:text-stone-950 prose-h2:mt-8 prose-h2:text-2xl prose-h3:mt-6 prose-h3:text-lg prose-p:my-3 prose-p:leading-7 prose-li:my-1 prose-li:leading-7 prose-strong:text-stone-950 prose-code:rounded prose-code:bg-stone-100 prose-code:px-1 prose-code:py-0.5 prose-pre:rounded-2xl prose-pre:bg-stone-950 prose-pre:text-stone-50 prose-ul:my-3 prose-ol:my-3">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{normalizedContent}</ReactMarkdown>
+    </div>
   )
 }
 
@@ -784,6 +989,121 @@ function compactText(value: string, maxLength: number): string {
     return normalized
   }
   return `${normalized.slice(0, maxLength - 1)}...`
+}
+
+function normalizeReportMarkdown(value: string): string {
+  const lines = value.replace(/\r\n/g, '\n').split('\n')
+
+  return lines
+    .map((line, index) => {
+      const trimmed = line.trim()
+      if (!isPlainSectionHeading(trimmed, lines[index - 1], lines[index + 1])) {
+        return line
+      }
+
+      return `${headingLevelForLine(trimmed)} ${trimmed}`
+    })
+    .join('\n')
+}
+
+function deriveConversationTitle(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= 48) {
+    return normalized
+  }
+
+  return `${normalized.slice(0, 45).trimEnd()}...`
+}
+
+function formatRelativeTime(value: string): string {
+  const timestamp = new Date(value).getTime()
+  const diffMs = timestamp - Date.now()
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+  const month = 30 * day
+  const formatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+
+  if (Math.abs(diffMs) < hour) {
+    return formatter.format(Math.round(diffMs / minute), 'minute')
+  }
+
+  if (Math.abs(diffMs) < day) {
+    return formatter.format(Math.round(diffMs / hour), 'hour')
+  }
+
+  if (Math.abs(diffMs) < month) {
+    return formatter.format(Math.round(diffMs / day), 'day')
+  }
+
+  return formatter.format(Math.round(diffMs / month), 'month')
+}
+
+function isPlainSectionHeading(
+  line: string,
+  previousLine?: string,
+  nextLine?: string,
+): boolean {
+  if (!line) {
+    return false
+  }
+
+  if (/^#{1,6}\s/.test(line) || /^[-*]\s/.test(line) || /^\d+\.\s/.test(line)) {
+    return false
+  }
+
+  if (/[.:;!?]$/.test(line) || line.includes('[') || line.includes(']')) {
+    return false
+  }
+
+  const words = line.split(/\s+/)
+  if (words.length > 8 || line.length > 80) {
+    return false
+  }
+
+  const previousTrimmed = previousLine?.trim() ?? ''
+  const nextTrimmed = nextLine?.trim() ?? ''
+  if (previousTrimmed && nextTrimmed) {
+    return false
+  }
+
+  const lowercaseSentenceSignals = new Set([
+    'is',
+    'are',
+    'was',
+    'were',
+    'be',
+    'been',
+    'have',
+    'has',
+    'had',
+  ])
+  if (words.some((word) => lowercaseSentenceSignals.has(word.toLowerCase()))) {
+    return false
+  }
+
+  return true
+}
+
+function headingLevelForLine(line: string): '##' | '###' {
+  const majorSectionPatterns = [
+    /^Executive Summary$/i,
+    /^Key Findings$/i,
+    /^Analysis$/i,
+    /^Gaps and Uncertainties$/i,
+    /^Outlook(?: or Implications)?$/i,
+    /^Sources$/i,
+  ]
+
+  if (
+    majorSectionPatterns.some((pattern) => pattern.test(line)) ||
+    line.length >= 24 ||
+    /\band\b/i.test(line)
+  ) {
+    return '##'
+  }
+
+  return '###'
 }
 
 function filterDisplayMetadata(

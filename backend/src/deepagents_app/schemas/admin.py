@@ -21,3 +21,29 @@ class AdminRunSummary(BaseModel):
 
 class AdminRunListResponse(BaseModel):
     runs: list[AdminRunSummary]
+
+
+class ConversationSummary(BaseModel):
+    conversation_id: str
+    title: str
+    preview: str
+    message_count: int
+    last_message_at: str
+
+
+class ConversationSummaryListResponse(BaseModel):
+    conversations: list[ConversationSummary]
+
+
+class ConversationMessage(BaseModel):
+    id: str
+    role: str
+    content: str
+    created_at: str
+    metrics: ChatRunMetrics | None = None
+
+
+class ConversationDetailResponse(BaseModel):
+    conversation_id: str
+    title: str
+    messages: list[ConversationMessage]

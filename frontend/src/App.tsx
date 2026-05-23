@@ -36,7 +36,7 @@ function AppShell() {
       <div
         className={[
           'mx-auto flex min-h-screen w-full flex-col px-4 sm:px-6 lg:px-8',
-          isChatRoute ? 'max-w-none' : 'max-w-7xl py-4',
+          isChatRoute ? 'max-w-none px-0 sm:px-0 lg:px-0 mx-0' : 'max-w-7xl py-4',
         ].join(' ')}
       >
         {!isChatRoute ? (

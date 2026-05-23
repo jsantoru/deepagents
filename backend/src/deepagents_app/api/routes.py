@@ -4,11 +4,16 @@ import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from deepagents_app.api.deps import get_agent_service, get_db_session
-from deepagents_app.schemas.admin import AdminOverviewResponse, AdminRunListResponse
+from deepagents_app.schemas.admin import (
+    AdminOverviewResponse,
+    AdminRunListResponse,
+    ConversationDetailResponse,
+    ConversationSummaryListResponse,
+)
 from deepagents_app.schemas.chat import ChatRequest, ChatResponse, ChatTraceEvent
 from deepagents_app.services.agent_service import AgentService
 from deepagents_app.services.metrics_service import MetricsService
@@ -91,6 +96,31 @@ async def admin_runs(
 ) -> AdminRunListResponse:
     metrics_service = MetricsService(db_session)
     return await metrics_service.list_runs(limit=limit)
+
+
+@api_router.get("/conversations", response_model=ConversationSummaryListResponse, tags=["chat"])
+async def conversations(
+    limit: int = 50,
+    db_session: AsyncSession = Depends(get_db_session),
+) -> ConversationSummaryListResponse:
+    metrics_service = MetricsService(db_session)
+    return await metrics_service.list_conversations(limit=limit)
+
+
+@api_router.get(
+    "/conversations/{conversation_id}",
+    response_model=ConversationDetailResponse,
+    tags=["chat"],
+)
+async def conversation_detail(
+    conversation_id: str,
+    db_session: AsyncSession = Depends(get_db_session),
+) -> ConversationDetailResponse:
+    metrics_service = MetricsService(db_session)
+    conversation = await metrics_service.get_conversation(conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return conversation
 
 
 def _format_sse(event: str, data: object) -> str:

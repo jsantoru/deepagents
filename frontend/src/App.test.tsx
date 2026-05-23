@@ -96,8 +96,9 @@ describe('App chat flow', () => {
     expect(await screen.findByText(/LangGraph docs:/)).toBeVisible()
     expect(screen.queryByText(/tool_call_id='call_123'/)).not.toBeInTheDocument()
     expect(await screen.findByText('runtime', { selector: 'strong' })).toBeVisible()
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+    const chatRequest = getChatStreamRequest(fetchMock)
+    expect(chatRequest).toBeDefined()
+    expect(JSON.parse(String(chatRequest?.[1]?.body))).toMatchObject({
       message: 'What is LangGraph?',
       research_mode: 'standard',
     })
@@ -292,7 +293,9 @@ describe('App chat flow', () => {
     await user.type(await screen.findByLabelText('Message'), 'Quick check')
     await user.click(screen.getByRole('button', { name: 'Send prompt' }))
 
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+    const chatRequest = getChatStreamRequest(fetchMock)
+    expect(chatRequest).toBeDefined()
+    expect(JSON.parse(String(chatRequest?.[1]?.body))).toMatchObject({
       message: 'Quick check',
       research_mode: 'light',
     })
@@ -370,6 +373,63 @@ describe('App chat flow', () => {
     expect(await screen.findByText('Query: Tavily fintech')).toBeVisible()
     expect(await screen.findByText(/Tavily raises \$25M:/)).toBeVisible()
   })
+
+  it('renders plain-text report section labels as headings', async () => {
+    const user = userEvent.setup()
+    const reportBody = [
+      'Executive Summary',
+      '',
+      'The Yankees and Mets are New York City teams.',
+      '',
+      'Key Facts and Ground Truth',
+      '',
+      'World Series titles',
+      '',
+      'Yankees: 27.',
+    ].join('\n')
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: createSseStream([
+        {
+          event: 'final',
+          data: {
+            conversation_id: 'conversation-6',
+            run_id: 'run-6',
+            answer: reportBody,
+            trace: [
+              {
+                id: 'final-answer-6',
+                type: 'final',
+                title: 'Final answer',
+                content: reportBody,
+                metadata: {},
+              },
+            ],
+            metrics: {
+              model_name: 'openai:gpt-5-nano',
+              latency_ms: 60,
+              input_tokens: 10,
+              output_tokens: 12,
+              total_tokens: 22,
+              estimated_cost_usd: 0.000003,
+              search_calls: 0,
+            },
+          },
+        },
+      ]),
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await user.type(await screen.findByLabelText('Message'), 'Format a report')
+    await user.click(screen.getByRole('button', { name: 'Send prompt' }))
+
+    expect(await screen.findByRole('heading', { name: 'Executive Summary' })).toBeVisible()
+    expect(await screen.findByRole('heading', { name: 'Key Facts and Ground Truth' })).toBeVisible()
+    expect(await screen.findByRole('heading', { name: 'World Series titles' })).toBeVisible()
+  })
 })
 
 function createSseStream(events: Array<{ event: string; data: unknown }>) {
@@ -384,4 +444,8 @@ function createSseStream(events: Array<{ event: string; data: unknown }>) {
       controller.close()
     },
   })
+}
+
+function getChatStreamRequest(fetchMock: ReturnType<typeof vi.fn>) {
+  return fetchMock.mock.calls.find((call) => String(call[0]).includes('/chat/stream'))
 }

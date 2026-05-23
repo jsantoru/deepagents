@@ -9,6 +9,10 @@ from deepagents_app.core.pricing import estimate_cost_usd
 from deepagents_app.models.chat import AgentRun, Conversation, Message
 from deepagents_app.schemas.admin import (
     AdminOverviewResponse,
+    ConversationDetailResponse,
+    ConversationMessage,
+    ConversationSummary,
+    ConversationSummaryListResponse,
     AdminRunListResponse,
     AdminRunSummary,
 )
@@ -114,6 +118,86 @@ class MetricsService:
         ]
         return AdminRunListResponse(runs=runs)
 
+    async def list_conversations(self, limit: int = 50) -> ConversationSummaryListResponse:
+        conversations = (
+            await self.session.execute(
+                select(Conversation)
+                .order_by(Conversation.created_at.desc())
+                .limit(limit)
+            )
+        ).scalars().all()
+
+        summaries: list[ConversationSummary] = []
+        for conversation in conversations:
+            messages = (
+                await self.session.execute(
+                    select(Message)
+                    .where(Message.conversation_id == conversation.id)
+                    .order_by(Message.created_at.asc())
+                )
+            ).scalars().all()
+            if not messages:
+                continue
+
+            title = _derive_conversation_title(messages)
+            preview = messages[-1].content[:140]
+            summaries.append(
+                ConversationSummary(
+                    conversation_id=conversation.id,
+                    title=title,
+                    preview=preview,
+                    message_count=len(messages),
+                    last_message_at=messages[-1].created_at.isoformat(),
+                )
+            )
+
+        summaries.sort(key=lambda item: item.last_message_at, reverse=True)
+        return ConversationSummaryListResponse(conversations=summaries)
+
+    async def get_conversation(self, conversation_id: str) -> ConversationDetailResponse | None:
+        conversation = await self.session.get(Conversation, conversation_id)
+        if conversation is None:
+            return None
+
+        messages = (
+            await self.session.execute(
+                select(Message)
+                .where(Message.conversation_id == conversation_id)
+                .order_by(Message.created_at.asc())
+            )
+        ).scalars().all()
+        if not messages:
+            return ConversationDetailResponse(
+                conversation_id=conversation_id,
+                title="Untitled conversation",
+                messages=[],
+            )
+
+        run_ids = [message.run_id for message in messages if message.run_id]
+        runs_by_id: dict[str, AgentRun] = {}
+        if run_ids:
+            runs = (
+                await self.session.execute(select(AgentRun).where(AgentRun.id.in_(run_ids)))
+            ).scalars().all()
+            runs_by_id = {run.id: run for run in runs}
+
+        return ConversationDetailResponse(
+            conversation_id=conversation_id,
+            title=_derive_conversation_title(messages),
+            messages=[
+                ConversationMessage(
+                    id=message.id,
+                    role=message.role,
+                    content=message.content,
+                    created_at=message.created_at.isoformat(),
+                    metrics=self._to_metrics(runs_by_id[message.run_id])
+                    if message.run_id and message.run_id in runs_by_id
+                    else None,
+                )
+                for message in messages
+            ],
+        )
+
     async def _get_or_create_conversation(self, conversation_id: str | None) -> Conversation:
         if conversation_id:
             conversation = await self.session.get(Conversation, conversation_id)
@@ -160,3 +244,14 @@ class MetricsService:
             estimated_cost_usd=round(run.estimated_cost_usd, 6),
             search_calls=run.search_calls,
         )
+
+
+def _derive_conversation_title(messages: list[Message]) -> str:
+    first_user_message = next((message for message in messages if message.role == "user"), None)
+    if first_user_message is None:
+        return "Untitled conversation"
+
+    title = " ".join(first_user_message.content.split())
+    if len(title) <= 48:
+        return title
+    return f"{title[:45].rstrip()}..."

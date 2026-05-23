@@ -46,6 +46,32 @@ export type AdminRunsResponse = {
   runs: AdminRunSummary[]
 }
 
+export type ConversationSummary = {
+  conversation_id: string
+  title: string
+  preview: string
+  message_count: number
+  last_message_at: string
+}
+
+export type ConversationSummariesResponse = {
+  conversations: ConversationSummary[]
+}
+
+export type ConversationMessage = {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  created_at: string
+  metrics?: ChatMetrics | null
+}
+
+export type ConversationDetailResponse = {
+  conversation_id: string
+  title: string
+  messages: ConversationMessage[]
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1'
 
 export async function sendChatMessage(
@@ -173,4 +199,26 @@ export async function fetchAdminRuns(): Promise<AdminRunsResponse> {
   }
 
   return (await response.json()) as AdminRunsResponse
+}
+
+export async function fetchConversationSummaries(): Promise<ConversationSummariesResponse> {
+  const response = await fetch(`${API_BASE_URL}/conversations`)
+
+  if (!response.ok) {
+    throw new Error('The conversation history request failed.')
+  }
+
+  return (await response.json()) as ConversationSummariesResponse
+}
+
+export async function fetchConversationDetail(
+  conversationId: string,
+): Promise<ConversationDetailResponse> {
+  const response = await fetch(`${API_BASE_URL}/conversations/${conversationId}`)
+
+  if (!response.ok) {
+    throw new Error('The conversation detail request failed.')
+  }
+
+  return (await response.json()) as ConversationDetailResponse
 }
