@@ -475,6 +475,9 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
       )
       if (toolCalls.length || reasoningSteps.length) {
         const reasoningSummary = extractReasoningSummary(reasoningSteps)
+        if (!toolCalls.length && !reasoningSummary) {
+          return null
+        }
         return {
           title: toolCalls.length ? 'Planning next steps' : 'Reasoning',
           summary:
@@ -488,7 +491,9 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
           }),
           links: [],
           metadata:
-            reasoningSteps.length > 0 ? { reasoning_steps: reasoningSteps.length } : {},
+            reasoningSummary && reasoningSteps.length > 0
+              ? { reasoning_steps: reasoningSteps.length }
+              : {},
         }
       }
     }
