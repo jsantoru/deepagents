@@ -1,22 +1,29 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import {
-  ArrowUpRight,
+  AlertCircle,
+  ArrowUp,
+  Bot,
   Clock3,
   Coins,
   ExternalLink,
+  FolderGit2,
+  GitBranch,
+  Globe,
+  LoaderCircle,
+  Mic,
+  Monitor,
+  Plus,
   Search,
   Sigma,
-  Bot,
-  Wrench,
   Sparkles,
+  Square,
+  Wrench,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { type ChatMetrics, type ChatTraceEvent, streamChatMessage } from '@/lib/api'
 
@@ -29,9 +36,24 @@ type TranscriptMessage = {
 }
 
 const starterPrompts = [
-  'What changed in LangChain DeepAgents recently?',
-  'Summarize the top AI agent framework releases this week.',
-  'Compare Tavily with Brave Search for agentic research.',
+  {
+    icon: Search,
+    text: 'Review my recent commits for correctness risks and maintainability concerns',
+  },
+  {
+    icon: GitBranch,
+    text: 'Unblock my most recent open PR',
+  },
+  {
+    icon: Sparkles,
+    text: 'Connect your favorite apps to Codex',
+  },
+]
+
+const chromeItems = [
+  { icon: FolderGit2, label: 'deepagents' },
+  { icon: Monitor, label: 'Work locally' },
+  { icon: GitBranch, label: 'main' },
 ]
 
 export function ChatPage() {
@@ -40,6 +62,17 @@ export function ChatPage() {
   const [messages, setMessages] = useState<TranscriptMessage[]>([])
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string>()
+  const [lastSubmittedPrompt, setLastSubmittedPrompt] = useState('')
+  const bottomAnchorRef = useRef<HTMLDivElement | null>(null)
+
+  const hasMessages = messages.length > 0
+  const isComposerDocked = hasMessages || isSending
+
+  useEffect(() => {
+    if (isComposerDocked && typeof bottomAnchorRef.current?.scrollIntoView === 'function') {
+      bottomAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    }
+  }, [isComposerDocked, messages.length])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -63,6 +96,7 @@ export function ChatPage() {
     }
 
     setMessages((currentMessages) => [...currentMessages, optimisticMessage, pendingAssistant])
+    setLastSubmittedPrompt(trimmedDraft)
     setDraft('')
     setError(undefined)
     setIsSending(true)
@@ -111,90 +145,182 @@ export function ChatPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
-      <Card className="overflow-hidden border-black/10 bg-white/75 shadow-[0_24px_80px_rgba(69,57,34,0.08)] backdrop-blur">
-        <CardHeader className="border-b border-black/5 pb-5">
-          <Badge className="w-fit rounded-full bg-emerald-200/80 px-3 py-1 text-emerald-950">
-            Python agent + Tavily search
-          </Badge>
-          <CardTitle className="max-w-3xl text-4xl tracking-tight text-stone-950">
-            Start with a focused research chat, then grow it into a deeper multi-step agent.
-          </CardTitle>
-          <p className="max-w-2xl text-sm leading-6 text-stone-600">
-            The backend already persists runs, token usage, latency, estimated cost, and search
-            counts. This screen is the first operator-facing surface over that stack.
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-5 p-5">
-          <div className="grid gap-3 md:grid-cols-3">
-            {starterPrompts.map((prompt) => (
-              <button
-                key={prompt}
-                type="button"
-                className="rounded-3xl border border-black/10 bg-stone-950 px-4 py-4 text-left text-sm text-stone-50 transition hover:-translate-y-0.5 hover:bg-stone-800"
-                onClick={() => setDraft(prompt)}
-              >
-                <div className="mb-3 flex items-center justify-between">
-                  <Search className="h-4 w-4" />
-                  <ArrowUpRight className="h-4 w-4 text-stone-400" />
-                </div>
-                {prompt}
-              </button>
-            ))}
-          </div>
-
-          <Separator />
-
-          <div className="space-y-4">
-            {messages.length === 0 ? (
-              <div className="rounded-[28px] border border-dashed border-black/15 bg-stone-50 p-10 text-sm text-stone-500">
-                Ask a question that benefits from web search. The first response will create a
-                tracked conversation and store its metrics in Postgres.
-              </div>
-            ) : (
-              messages.map((message) => (
-                <article
-                  key={message.id}
-                  className={[
-                    'rounded-[28px] border p-5 shadow-sm',
-                    message.role === 'user'
-                      ? 'ml-auto max-w-2xl border-stone-950 bg-stone-950 text-stone-50'
-                      : 'max-w-3xl border-black/10 bg-white',
-                  ].join(' ')}
-                >
-                  <div className="mb-2 text-xs uppercase tracking-[0.28em] text-current/60">
-                    {message.role === 'user' ? 'You' : 'Agent'}
-                  </div>
-                  <MessageBody message={message} />
-                  {message.trace?.length ? <TraceTimeline trace={message.trace} /> : null}
-                  {message.metrics ? <RunMetrics metrics={message.metrics} /> : null}
-                </article>
-              ))
-            )}
-
-          </div>
-
-          <form className="space-y-3" onSubmit={handleSubmit}>
-            <Textarea
-              aria-label="Message"
-              className="min-h-32 rounded-[28px] border-black/10 bg-white/90 px-5 py-4 text-base shadow-none"
-              placeholder="Ask the research agent a question..."
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
+    <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 pb-6 pt-10 sm:px-6">
+      <div
+        className={[
+          'transition-all duration-300',
+          isComposerDocked ? 'flex-1 pb-56' : 'flex flex-1 flex-col justify-center pb-16',
+        ].join(' ')}
+      >
+        {!isComposerDocked ? (
+          <section className="mx-auto w-full max-w-5xl">
+            <h1 className="mb-10 text-center text-4xl font-medium tracking-tight text-stone-900 sm:text-5xl">
+              What should we build in deepagents?
+            </h1>
+            <PromptComposer
+              draft={draft}
+              error={error}
+              isDocked={false}
+              isSending={isSending}
+              lastSubmittedPrompt={lastSubmittedPrompt}
+              onChange={setDraft}
+              onSubmit={handleSubmit}
             />
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-sm text-red-600">{error}</div>
-              <Button
-                className="rounded-full bg-stone-950 px-6 hover:bg-stone-800"
-                disabled={isSending || !draft.trim()}
-                type="submit"
-              >
-                {isSending ? 'Thinking...' : 'Send prompt'}
-              </Button>
+            <div className="mt-6">
+              {starterPrompts.map(({ icon: Icon, text }) => (
+                <button
+                  key={text}
+                  type="button"
+                  className="flex w-full items-center gap-3 border-t border-stone-200/90 py-5 text-left text-lg text-stone-500 transition hover:text-stone-900"
+                  onClick={() => setDraft(text)}
+                >
+                  <Icon className="h-5 w-5 text-stone-400" />
+                  <span>{text}</span>
+                </button>
+              ))}
             </div>
-          </form>
-        </CardContent>
-      </Card>
+          </section>
+        ) : (
+          <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6">
+            <ConversationMessages messages={messages} />
+            <div ref={bottomAnchorRef} />
+          </section>
+        )}
+      </div>
+
+      {isComposerDocked ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-4 pb-4 sm:px-6">
+          <div className="mx-auto w-full max-w-5xl rounded-[32px] bg-[linear-gradient(180deg,rgba(249,249,247,0),rgba(249,249,247,0.94)_24%,rgba(249,249,247,0.98)_100%)] pt-8">
+            <div className="pointer-events-auto">
+              <PromptComposer
+                draft={draft}
+                error={error}
+                isDocked
+                isSending={isSending}
+                lastSubmittedPrompt={lastSubmittedPrompt}
+                onChange={setDraft}
+                onSubmit={handleSubmit}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+type PromptComposerProps = {
+  draft: string
+  error?: string
+  isDocked: boolean
+  isSending: boolean
+  lastSubmittedPrompt: string
+  onChange: (value: string) => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+}
+
+function PromptComposer({
+  draft,
+  error,
+  isDocked,
+  isSending,
+  lastSubmittedPrompt,
+  onChange,
+  onSubmit,
+}: PromptComposerProps) {
+  const disabled = isSending
+  const placeholder = isDocked ? 'Ask for follow-up changes' : 'Message Codex'
+
+  return (
+    <form className="space-y-3" onSubmit={onSubmit}>
+      <div className="overflow-hidden rounded-[30px] border border-stone-300 bg-white shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
+        <Textarea
+          aria-label="Message"
+          className="min-h-[128px] resize-none border-0 bg-transparent px-5 py-4 text-[1.05rem] leading-8 text-stone-900 shadow-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:bg-transparent disabled:text-stone-400 disabled:opacity-100"
+          disabled={disabled}
+          placeholder={placeholder}
+          value={disabled ? '' : draft}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-stone-200 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-stone-500">
+            <button
+              type="button"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-900"
+            >
+              <Plus className="h-5 w-5" />
+            </button>
+            <div className="inline-flex items-center gap-2 text-orange-600">
+              <AlertCircle className="h-4 w-4" />
+              <span>Full access</span>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-4 text-sm text-stone-500">
+            {isSending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+            <div className="inline-flex items-center gap-1">
+              <span>GPT-5.4</span>
+            </div>
+            <div className="inline-flex items-center gap-1">
+              <span>Medium</span>
+            </div>
+            <button
+              type="button"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-900"
+            >
+              <Mic className="h-4 w-4" />
+            </button>
+            <Button
+              aria-label={isSending ? 'Processing request' : 'Send prompt'}
+              className="h-12 w-12 rounded-full bg-stone-950 p-0 hover:bg-stone-800 disabled:bg-stone-950/90 disabled:opacity-100"
+              disabled={!isSending && !draft.trim()}
+              type="submit"
+            >
+              {isSending ? <Square className="h-4 w-4 fill-current" /> : <ArrowUp className="h-5 w-5" />}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-[0_0_26px_26px] bg-stone-100/95 px-5 py-3 text-sm text-stone-500 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+        <div className="flex flex-wrap items-center gap-5">
+          {chromeItems.map(({ icon: Icon, label }) => (
+            <div key={label} className="inline-flex items-center gap-2">
+              <Icon className="h-4 w-4 text-stone-400" />
+              <span>{label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {error ? <div className="text-sm text-red-600">{error}</div> : null}
+      {isSending && lastSubmittedPrompt ? (
+        <div className="text-sm text-stone-500">Processing: {lastSubmittedPrompt}</div>
+      ) : null}
+    </form>
+  )
+}
+
+function ConversationMessages({ messages }: { messages: TranscriptMessage[] }) {
+  return (
+    <div className="space-y-4">
+      {messages.map((message) => (
+        <article
+          key={message.id}
+          className={[
+            'rounded-[28px] border p-5 shadow-sm',
+            message.role === 'user'
+              ? 'ml-auto max-w-3xl border-stone-950 bg-stone-950 text-stone-50'
+              : 'max-w-4xl border-stone-200 bg-white/92 text-stone-900',
+          ].join(' ')}
+        >
+          <div className="mb-2 text-xs uppercase tracking-[0.28em] text-current/60">
+            {message.role === 'user' ? 'You' : 'Codex'}
+          </div>
+          <MessageBody message={message} />
+          {message.trace?.length ? <TraceTimeline trace={message.trace} /> : null}
+          {message.metrics ? <RunMetrics metrics={message.metrics} /> : null}
+        </article>
+      ))}
     </div>
   )
 }
@@ -236,6 +362,9 @@ function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
       {orderedTrace.map((event, index) => {
         const Icon = getTraceIcon(event.type)
         const display = formatTraceEvent(event)
+        if (!display) {
+          return null
+        }
         return (
           <div
             key={`${event.type}-${index}-${event.title}`}
@@ -331,7 +460,7 @@ type TraceDisplay = {
   metadata: Record<string, string | number>
 }
 
-function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
+function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
   const resolvedToolName = resolveToolName(event)
 
   if (event.type === 'assistant' || event.type === 'assistant_delta') {
@@ -345,12 +474,13 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
         (item) => isRecord(item) && item.type === 'reasoning',
       )
       if (toolCalls.length || reasoningSteps.length) {
+        const reasoningSummary = extractReasoningSummary(reasoningSteps)
         return {
           title: toolCalls.length ? 'Planning next steps' : 'Reasoning',
           summary:
             toolCalls.length > 0
               ? `Preparing ${toolCalls.length} web search${toolCalls.length > 1 ? 'es' : ''}.`
-              : 'Reasoning through the next step.',
+              : reasoningSummary,
           bullets: toolCalls.map((call) => {
             const args = tryParseJson(String(call.arguments))
             const query = isRecord(args) && typeof args.query === 'string' ? args.query : 'Search'
@@ -364,14 +494,19 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
     }
 
     if (looksLikeJsonFragment(normalizedContent)) {
-      return {
-        title: 'Reasoning',
-        summary: 'Reasoning through the next step.',
-        bullets: extractSearchQueriesFromJsonText(normalizedContent).map((query) => `Search: ${query}`),
-        links: [],
-        metadata: event.metadata,
+      const queries = extractSearchQueriesFromJsonText(normalizedContent)
+      if (queries.length > 0) {
+        return {
+          title: 'Planning next steps',
+          summary: `Preparing ${queries.length} web search${queries.length > 1 ? 'es' : ''}.`,
+          bullets: queries.map((query) => `Search: ${query}`),
+          links: [],
+          metadata: event.metadata,
+        }
       }
     }
+
+    return null
   }
 
   if (event.type === 'tool' || event.type === 'tool_result' || event.type === 'tool_delta') {
@@ -498,6 +633,29 @@ function isFunctionCallRecord(
   value: unknown,
 ): value is Record<'arguments' | 'name', string> & Record<string, unknown> {
   return isRecord(value) && value.type === 'function_call' && typeof value.arguments === 'string'
+}
+
+function extractReasoningSummary(reasoningSteps: unknown[]): string {
+  const summaries: string[] = []
+
+  for (const step of reasoningSteps) {
+    if (!isRecord(step) || !Array.isArray(step.summary)) {
+      continue
+    }
+
+    for (const summaryItem of step.summary) {
+      if (typeof summaryItem === 'string' && summaryItem.trim()) {
+        summaries.push(summaryItem.trim())
+        continue
+      }
+
+      if (isRecord(summaryItem) && typeof summaryItem.text === 'string' && summaryItem.text.trim()) {
+        summaries.push(summaryItem.text.trim())
+      }
+    }
+  }
+
+  return summaries.join(' ')
 }
 
 function compactText(value: string, maxLength: number): string {
@@ -722,10 +880,15 @@ function RunMetrics({ metrics }: { metrics: ChatMetrics }) {
       label: 'Est. cost',
       value: `$${metrics.estimated_cost_usd.toFixed(5)}`,
     },
+    {
+      icon: Globe,
+      label: 'Input',
+      value: metrics.input_tokens.toLocaleString(),
+    },
   ]
 
   return (
-    <div className="mt-5 grid gap-2 border-t border-current/10 pt-4 sm:grid-cols-3">
+    <div className="mt-5 grid gap-2 border-t border-current/10 pt-4 sm:grid-cols-2 lg:grid-cols-4">
       {items.map(({ icon: Icon, label, value }) => (
         <div
           key={label}
