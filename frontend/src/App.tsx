@@ -15,8 +15,8 @@ const AdminPage = lazy(async () => {
 })
 
 const navigationItems = [
-  { to: '/', label: 'Chat', icon: SearchCode },
-  { to: '/admin', label: 'Admin', icon: ChartColumnBig },
+  { to: '/', label: 'New chat', icon: SearchCode },
+  { to: '/admin', label: 'Admin dashboard', icon: ChartColumnBig },
 ]
 
 function App() {
