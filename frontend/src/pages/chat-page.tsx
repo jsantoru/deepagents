@@ -79,7 +79,7 @@ export function ChatPage() {
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+    <div className="mx-auto w-full max-w-5xl">
       <Card className="overflow-hidden border-black/10 bg-white/75 shadow-[0_24px_80px_rgba(69,57,34,0.08)] backdrop-blur">
         <CardHeader className="border-b border-black/5 pb-5">
           <Badge className="w-fit rounded-full bg-emerald-200/80 px-3 py-1 text-emerald-950">
@@ -168,30 +168,6 @@ export function ChatPage() {
               </Button>
             </div>
           </form>
-        </CardContent>
-      </Card>
-
-      <Card className="border-black/10 bg-stone-950 text-stone-50 shadow-[0_24px_80px_rgba(69,57,34,0.12)]">
-        <CardHeader className="space-y-4">
-          <Badge className="w-fit rounded-full border border-white/15 bg-white/10 px-3 py-1 text-white">
-            Agent activity
-          </Badge>
-          <CardTitle className="text-3xl tracking-tight">
-            The main view now exposes intermediate agent notes and tool activity per run.
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 text-sm text-stone-300">
-          <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-            Assistant responses now include a normalized trace built from the DeepAgents message
-            stream.
-          </div>
-          <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-            Tool calls are surfaced inline so you can see when search ran and what the agent handed
-            to the tool.
-          </div>
-          <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-            Hidden chain-of-thought is not exposed, but observable agent events are.
-          </div>
         </CardContent>
       </Card>
     </div>
