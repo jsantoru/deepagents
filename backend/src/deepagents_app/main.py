@@ -1,8 +1,18 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from deepagents_app.api.routes import api_router
 from deepagents_app.core.config import get_settings
+from deepagents_app.core.db import dispose_engine, init_db
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    await init_db()
+    yield
+    await dispose_engine()
 
 
 def create_application() -> FastAPI:
@@ -11,6 +21,7 @@ def create_application() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
+        lifespan=lifespan,
     )
 
     app.add_middleware(

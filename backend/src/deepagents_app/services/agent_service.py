@@ -1,17 +1,29 @@
 import asyncio
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Literal
 
 from deepagents import create_deep_agent
 from tavily import TavilyClient
 
 from deepagents_app.core.config import get_settings
-from deepagents_app.schemas.chat import ChatRequest, ChatResponse
+from deepagents_app.schemas.chat import ChatRequest
+
+
+@dataclass(slots=True)
+class AgentRunResult:
+    answer: str
+    model_name: str
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    search_calls: int
+    raw_payload: dict
 
 
 class AgentService(ABC):
     @abstractmethod
-    async def chat(self, payload: ChatRequest) -> ChatResponse:
+    async def chat(self, payload: ChatRequest) -> AgentRunResult:
         """Execute a chat request."""
 
 
@@ -49,10 +61,29 @@ class DeepAgentsService(AgentService):
             system_prompt=system_prompt,
         )
 
-    async def chat(self, payload: ChatRequest) -> ChatResponse:
+    async def chat(self, payload: ChatRequest) -> AgentRunResult:
         result = await asyncio.to_thread(
             self._agent.invoke,
             {"messages": [{"role": "user", "content": payload.message}]},
         )
-        answer = result["messages"][-1].content
-        return ChatResponse(answer=answer)
+        answer_message = result["messages"][-1]
+        usage = getattr(answer_message, "usage_metadata", {}) or {}
+        model_name = getattr(answer_message, "response_metadata", {}).get(
+            "model_name",
+            self.settings.agent_model,
+        )
+        search_calls = sum(
+            1
+            for message in result["messages"]
+            if getattr(message, "name", None) == "internet_search"
+            or getattr(message, "type", None) == "tool"
+        )
+        return AgentRunResult(
+            answer=answer_message.content,
+            model_name=model_name,
+            input_tokens=usage.get("input_tokens", 0),
+            output_tokens=usage.get("output_tokens", 0),
+            total_tokens=usage.get("total_tokens", 0),
+            search_calls=search_calls,
+            raw_payload=result,
+        )

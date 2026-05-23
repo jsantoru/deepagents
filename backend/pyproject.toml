@@ -5,6 +5,7 @@ description = "Backend service for a LangChain DeepAgents chat application."
 readme = "../README.md"
 requires-python = ">=3.12"
 dependencies = [
+  "aiosqlite>=0.21.0",
   "asyncpg>=0.30.0",
   "deepagents>=0.6.1",
   "fastapi>=0.115.12",
