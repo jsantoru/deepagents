@@ -91,7 +91,7 @@ export function ChatPage() {
                     id: finalResponse.run_id,
                     role: 'assistant',
                     content: finalResponse.answer,
-                    trace: finalResponse.trace,
+                    trace: mergeFinalTrace(message.trace ?? [], finalResponse.trace),
                     metrics: finalResponse.metrics,
                   }
                 : message,
@@ -485,6 +485,16 @@ function extractSearchQueriesFromJsonText(value: string): string[] {
   return Array.from(value.matchAll(/"query"\s*:\s*"([^"]+)"/g), (match) => match[1])
 }
 
+function extractPrimaryQuery(value: string): string | undefined {
+  const normalizedContent = unwrapStructuredToolContent(value)
+  const parsed = tryParseJson(normalizedContent)
+  if (isRecord(parsed) && typeof parsed.query === 'string') {
+    return parsed.query
+  }
+
+  return extractSearchQueriesFromJsonText(normalizedContent)[0]
+}
+
 function unwrapStructuredToolContent(value: string): string {
   const singleQuotedMatch = value.match(/content='([\s\S]*?)'\s+(?:name|tool_call_id)=/)
   if (singleQuotedMatch) {
@@ -515,6 +525,60 @@ function applyTraceEvent(trace: ChatTraceEvent[], incomingEvent: ChatTraceEvent)
       : incomingEvent
 
   return trace.map((event, index) => (index === eventIndex ? updatedEvent : event))
+}
+
+function mergeFinalTrace(
+  streamedTrace: ChatTraceEvent[],
+  finalTrace: ChatTraceEvent[],
+): ChatTraceEvent[] {
+  const mergedTrace = [...streamedTrace]
+
+  for (const finalEvent of finalTrace) {
+    const existingIndex = mergedTrace.findIndex((event) => shouldMergeTraceEvent(event, finalEvent))
+    if (existingIndex === -1) {
+      mergedTrace.push(finalEvent)
+      continue
+    }
+
+    mergedTrace[existingIndex] = {
+      ...mergedTrace[existingIndex],
+      ...finalEvent,
+    }
+  }
+
+  return mergedTrace
+}
+
+function shouldMergeTraceEvent(currentEvent: ChatTraceEvent, incomingEvent: ChatTraceEvent): boolean {
+  if (currentEvent.id === incomingEvent.id) {
+    return true
+  }
+
+  if (
+    isToolTraceType(currentEvent.type) &&
+    isToolTraceType(incomingEvent.type) &&
+    currentEvent.metadata.tool_name === incomingEvent.metadata.tool_name
+  ) {
+    const currentQuery = extractPrimaryQuery(currentEvent.content)
+    const incomingQuery = extractPrimaryQuery(incomingEvent.content)
+    if (currentQuery && incomingQuery && currentQuery === incomingQuery) {
+      return true
+    }
+  }
+
+  if (
+    currentEvent.type === incomingEvent.type &&
+    currentEvent.title === incomingEvent.title &&
+    currentEvent.content === incomingEvent.content
+  ) {
+    return true
+  }
+
+  return false
+}
+
+function isToolTraceType(type: string): boolean {
+  return type === 'tool' || type === 'tool_delta' || type === 'tool_result' || type === 'tool_error'
 }
 
 function updateAssistantContent(content: string, event: ChatTraceEvent): string {

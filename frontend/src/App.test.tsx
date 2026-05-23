@@ -1,8 +1,13 @@
-import { render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import App from '@/App'
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
 describe('App chat flow', () => {
   it('submits a prompt and renders the assistant response', async () => {
@@ -83,7 +88,6 @@ describe('App chat flow', () => {
 
     render(<App />)
 
-    await screen.findByText('Research Console')
     await user.type(await screen.findByLabelText('Message'), 'What is LangGraph?')
     await user.click(screen.getByRole('button', { name: 'Send prompt' }))
 
@@ -94,6 +98,88 @@ describe('App chat flow', () => {
     expect(screen.queryByText(/tool_call_id='call_123'/)).not.toBeInTheDocument()
     expect(await screen.findByText('runtime', { selector: 'strong' })).toBeVisible()
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves streamed trace order when the final snapshot arrives', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: createSseStream([
+        {
+          event: 'trace',
+          data: {
+            id: 'stream-note-1',
+            type: 'assistant',
+            title: 'Agent note',
+            content: '[{"type":"function_call","arguments":"{\\"query\\":\\"latest langgraph release\\"}","name":"internet_search"}]',
+            metadata: {},
+          },
+        },
+        {
+          event: 'trace',
+          data: {
+            id: 'tool-call-1',
+            type: 'tool',
+            title: 'Tool call: internet_search',
+            content: '{"query":"latest langgraph release"}',
+            metadata: { tool_name: 'internet_search' },
+          },
+        },
+        {
+          event: 'final',
+          data: {
+            conversation_id: 'conversation-2',
+            run_id: 'run-2',
+            answer: 'Done.',
+            trace: [
+              {
+                id: 'final-note-9',
+                type: 'assistant',
+                title: 'Agent note',
+                content: 'Reviewing the search results.',
+                metadata: {},
+              },
+              {
+                id: 'final-tool-9',
+                type: 'tool_result',
+                title: 'Tool result: internet_search',
+                content:
+                  `content='{"query":"latest langgraph release","results":[{"url":"https://example.com/release","title":"Release notes","content":"LangGraph shipped a new release.","score":0.95}]}' name='internet_search' tool_call_id='call_final'`,
+                metadata: { tool_name: 'internet_search' },
+              },
+              {
+                id: 'final-answer-9',
+                type: 'final',
+                title: 'Final answer',
+                content: 'Done.',
+                metadata: {},
+              },
+            ],
+            metrics: {
+              model_name: 'openai:gpt-5-nano',
+              latency_ms: 120,
+              input_tokens: 100,
+              output_tokens: 50,
+              total_tokens: 150,
+              estimated_cost_usd: 0.000025,
+              search_calls: 1,
+            },
+          },
+        },
+      ]),
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await user.type(await screen.findByLabelText('Message'), 'What changed?')
+    await user.click(screen.getByRole('button', { name: 'Send prompt' }))
+
+    expect(await screen.findByText('Planning next steps')).toBeVisible()
+    expect(await screen.findByText('Search: latest langgraph release')).toBeVisible()
+    expect(await screen.findByText('Search results')).toBeVisible()
+    expect(await screen.findByText(/Release notes:/)).toBeVisible()
   })
 })
 
