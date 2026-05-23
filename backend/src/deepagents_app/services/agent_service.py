@@ -36,6 +36,8 @@ Required verification step:
 
 Final deliverable format:
 - Write the final response in Markdown.
+- Structure the Markdown deliberately. Use headings, bullet lists, numbered lists, and tables when they improve clarity.
+- Do not force tables everywhere; use them only when a tabular comparison, source matrix, timeline, or structured summary is genuinely helpful.
 - Write the final response as an OSIR-style open source intelligence report, but without any classified markings, dissemination controls, or security labels.
 - Do not include classified-style headers or markings of any kind.
 - Use clear report sections when relevant, such as: Executive Summary, Key Findings, Analysis, Gaps and Uncertainties, and Outlook or Implications.
