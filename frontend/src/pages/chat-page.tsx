@@ -200,6 +200,10 @@ export function ChatPage() {
 }
 
 function MessageBody({ message }: { message: TranscriptMessage }) {
+  if (message.role === 'assistant' && message.trace?.length) {
+    return null
+  }
+
   if (!message.content.trim()) {
     if (message.role === 'assistant') {
       return (
@@ -224,10 +228,12 @@ function MessageBody({ message }: { message: TranscriptMessage }) {
 }
 
 function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
+  const orderedTrace = orderTraceEvents(trace)
+
   return (
     <div className="mt-5 space-y-3 border-t border-current/10 pt-4">
       <div className="text-xs uppercase tracking-[0.24em] text-current/60">Run trace</div>
-      {trace.map((event, index) => {
+      {orderedTrace.map((event, index) => {
         const Icon = getTraceIcon(event.type)
         const display = formatTraceEvent(event)
         return (
@@ -239,9 +245,7 @@ function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
               <Icon className="h-3.5 w-3.5" />
               {display.title}
             </div>
-            {display.summary ? (
-              <p className="whitespace-pre-wrap text-sm leading-6">{display.summary}</p>
-            ) : null}
+            {display.summary ? <TraceSummary event={event} summary={display.summary} /> : null}
             {display.bullets.length ? (
               <div className="mt-3 space-y-2">
                 {display.bullets.map((bullet) => (
@@ -271,7 +275,7 @@ function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
               </div>
             ) : null}
             {!display.summary && !display.bullets.length && !display.links.length ? (
-              <p className="whitespace-pre-wrap text-sm leading-6">{event.content}</p>
+              <TraceSummary event={event} summary={event.content} />
             ) : null}
             {Object.keys(display.metadata).length ? (
               <div className="mt-3 flex flex-wrap gap-2">
@@ -291,6 +295,18 @@ function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
       })}
     </div>
   )
+}
+
+function TraceSummary({ event, summary }: { event: ChatTraceEvent; summary: string }) {
+  if (event.type === 'final') {
+    return (
+      <div className="prose prose-sm max-w-none whitespace-pre-wrap prose-headings:mt-4 prose-headings:text-stone-950 prose-p:leading-7 prose-li:leading-7 prose-strong:text-stone-950 prose-code:rounded prose-code:bg-stone-100 prose-code:px-1 prose-code:py-0.5 prose-pre:bg-stone-950 prose-pre:text-stone-50">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{summary}</ReactMarkdown>
+      </div>
+    )
+  }
+
+  return <p className="whitespace-pre-wrap text-sm leading-6">{summary}</p>
 }
 
 function getTraceIcon(type: string) {
@@ -326,7 +342,7 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
       )
       if (toolCalls.length || reasoningSteps.length) {
         return {
-          title: toolCalls.length ? 'Planning next steps' : event.title,
+          title: toolCalls.length ? 'Planning next steps' : 'Reasoning',
           summary:
             toolCalls.length > 0
               ? `Preparing ${toolCalls.length} web search${toolCalls.length > 1 ? 'es' : ''}.`
@@ -345,7 +361,7 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
 
     if (looksLikeJsonFragment(normalizedContent)) {
       return {
-        title: 'Planning next steps',
+        title: 'Reasoning',
         summary: 'Reasoning through the next step.',
         bullets: extractSearchQueriesFromJsonText(normalizedContent).map((query) => `Search: ${query}`),
         links: [],
@@ -388,6 +404,20 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
           })
           .filter((value): value is { label: string; url: string } => Boolean(value))
 
+        const domains = Array.from(
+          new Set(
+            links
+              .map((link) => {
+                try {
+                  return new URL(link.url).hostname.replace(/^www\./, '')
+                } catch {
+                  return null
+                }
+              })
+              .filter((value): value is string => Boolean(value)),
+          ),
+        )
+
         return {
           title:
             event.type === 'tool'
@@ -408,6 +438,7 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
             ...(typeof parsed.results.length === 'number'
               ? { results: parsed.results.length }
               : {}),
+            ...(domains.length ? { sources: domains.slice(0, 3).join(', ') } : {}),
           },
         }
       }
@@ -547,6 +578,12 @@ function mergeFinalTrace(
   }
 
   return mergedTrace
+}
+
+function orderTraceEvents(trace: ChatTraceEvent[]): ChatTraceEvent[] {
+  const nonFinalEvents = trace.filter((event) => event.type !== 'final')
+  const finalEvents = trace.filter((event) => event.type === 'final')
+  return [...nonFinalEvents, ...finalEvents]
 }
 
 function shouldMergeTraceEvent(currentEvent: ChatTraceEvent, incomingEvent: ChatTraceEvent): boolean {
