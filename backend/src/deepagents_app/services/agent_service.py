@@ -1,5 +1,7 @@
 import asyncio
+import json
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -67,6 +69,7 @@ class DeepAgentsService(AgentService):
             {"messages": [{"role": "user", "content": payload.message}]},
         )
         answer_message = result["messages"][-1]
+        answer = _normalize_message_content(answer_message.content)
         usage = getattr(answer_message, "usage_metadata", {}) or {}
         model_name = getattr(answer_message, "response_metadata", {}).get(
             "model_name",
@@ -79,7 +82,7 @@ class DeepAgentsService(AgentService):
             or getattr(message, "type", None) == "tool"
         )
         return AgentRunResult(
-            answer=answer_message.content,
+            answer=answer,
             model_name=model_name,
             input_tokens=usage.get("input_tokens", 0),
             output_tokens=usage.get("output_tokens", 0),
@@ -87,3 +90,30 @@ class DeepAgentsService(AgentService):
             search_calls=search_calls,
             raw_payload=result,
         )
+
+
+def _normalize_message_content(content: object) -> str:
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, Sequence) and not isinstance(content, (str, bytes, bytearray)):
+        text_chunks: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                text_chunks.append(item)
+                continue
+
+            if isinstance(item, dict):
+                if item.get("type") == "text" and isinstance(item.get("text"), str):
+                    text_chunks.append(item["text"])
+                    continue
+
+                text_value = item.get("text")
+                if isinstance(text_value, str):
+                    text_chunks.append(text_value)
+                    continue
+
+        if text_chunks:
+            return "\n".join(chunk.strip() for chunk in text_chunks if chunk and chunk.strip())
+
+    return json.dumps(content, ensure_ascii=True, default=str)
