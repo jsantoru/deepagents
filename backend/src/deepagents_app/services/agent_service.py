@@ -35,6 +35,7 @@ Required verification step:
 - If verification is incomplete, say what could not be verified and lower confidence accordingly.
 
 Final deliverable format:
+- Write the final response in Markdown.
 - Write the final response as an OSIR-style open source intelligence report, but without any classified markings, dissemination controls, or security labels.
 - Do not include classified-style headers or markings of any kind.
 - Use clear report sections when relevant, such as: Executive Summary, Key Findings, Analysis, Gaps and Uncertainties, and Outlook or Implications.

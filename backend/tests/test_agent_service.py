@@ -29,6 +29,7 @@ def test_analyst_system_prompt_requires_verified_citations_and_osir_format() -> 
     assert "open-source intelligence analyst" in ANALYST_SYSTEM_PROMPT
     assert "Never invent, guess, or hallucinate a citation" in ANALYST_SYSTEM_PROMPT
     assert "Before drafting the final answer, verify every citation" in ANALYST_SYSTEM_PROMPT
+    assert "Write the final response in Markdown." in ANALYST_SYSTEM_PROMPT
     assert "OSIR-style open source intelligence report" in ANALYST_SYSTEM_PROMPT
     assert "without any classified markings" in ANALYST_SYSTEM_PROMPT
     assert "End the report with a clearly labeled Sources section" in ANALYST_SYSTEM_PROMPT
