@@ -88,7 +88,8 @@ describe('App chat flow', () => {
       await screen.findAllByText('LangGraph is the runtime beneath DeepAgents.'),
     ).toHaveLength(2)
     expect(await screen.findByText('Run trace')).toBeVisible()
-    expect(await screen.findByText('Tool call: internet_search')).toBeVisible()
+    expect(await screen.findByText('Preparing web search')).toBeVisible()
+    expect(await screen.findByText('Query: What is LangGraph?')).toBeVisible()
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

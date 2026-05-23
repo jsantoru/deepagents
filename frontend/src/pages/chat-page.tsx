@@ -3,6 +3,7 @@ import {
   ArrowUpRight,
   Clock3,
   Coins,
+  ExternalLink,
   Search,
   Sigma,
   Bot,
@@ -202,6 +203,7 @@ function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
       <div className="text-xs uppercase tracking-[0.24em] text-current/60">Run trace</div>
       {trace.map((event, index) => {
         const Icon = getTraceIcon(event.type)
+        const display = formatTraceEvent(event)
         return (
           <div
             key={`${event.type}-${index}-${event.title}`}
@@ -209,12 +211,45 @@ function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
           >
             <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-current/60">
               <Icon className="h-3.5 w-3.5" />
-              {event.title}
+              {display.title}
             </div>
-            <p className="whitespace-pre-wrap text-sm leading-6">{event.content}</p>
-            {Object.keys(event.metadata).length ? (
+            {display.summary ? (
+              <p className="whitespace-pre-wrap text-sm leading-6">{display.summary}</p>
+            ) : null}
+            {display.bullets.length ? (
+              <div className="mt-3 space-y-2">
+                {display.bullets.map((bullet) => (
+                  <div
+                    key={bullet}
+                    className="rounded-2xl border border-current/10 bg-white/40 px-3 py-2 text-sm leading-6"
+                  >
+                    {bullet}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {display.links.length ? (
+              <div className="mt-3 space-y-2">
+                {display.links.map((link) => (
+                  <a
+                    key={link.url}
+                    href={link.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-2 rounded-2xl border border-current/10 bg-white/30 px-3 py-2 text-sm leading-6 hover:bg-white/50"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{link.label}</span>
+                  </a>
+                ))}
+              </div>
+            ) : null}
+            {!display.summary && !display.bullets.length && !display.links.length ? (
+              <p className="whitespace-pre-wrap text-sm leading-6">{event.content}</p>
+            ) : null}
+            {Object.keys(display.metadata).length ? (
               <div className="mt-3 flex flex-wrap gap-2">
-                {Object.entries(event.metadata).map(([key, value]) => (
+                {Object.entries(display.metadata).map(([key, value]) => (
                   <Badge
                     key={key}
                     className="rounded-full border border-current/10 bg-transparent px-3 py-1 text-[11px] tracking-[0.18em] text-current/70"
@@ -244,6 +279,147 @@ function getTraceIcon(type: string) {
     default:
       return Bot
   }
+}
+
+type TraceDisplay = {
+  title: string
+  summary: string
+  bullets: string[]
+  links: Array<{ label: string; url: string }>
+  metadata: Record<string, string | number>
+}
+
+function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
+  if (event.type === 'assistant' || event.type === 'assistant_delta') {
+    const parsed = tryParseJson(event.content)
+    if (Array.isArray(parsed)) {
+      const toolCalls = parsed.filter(isFunctionCallRecord)
+      const reasoningSteps = parsed.filter(
+        (item) => isRecord(item) && item.type === 'reasoning',
+      )
+      if (toolCalls.length || reasoningSteps.length) {
+        return {
+          title: toolCalls.length ? 'Planning next steps' : event.title,
+          summary:
+            toolCalls.length > 0
+              ? `Preparing ${toolCalls.length} web search${toolCalls.length > 1 ? 'es' : ''}.`
+              : 'Reasoning through the next step.',
+          bullets: toolCalls.map((call) => {
+            const args = tryParseJson(String(call.arguments))
+            const query = isRecord(args) && typeof args.query === 'string' ? args.query : 'Search'
+            return `Search: ${query}`
+          }),
+          links: [],
+          metadata:
+            reasoningSteps.length > 0 ? { reasoning_steps: reasoningSteps.length } : {},
+        }
+      }
+    }
+  }
+
+  if (event.type === 'tool' || event.type === 'tool_result' || event.type === 'tool_delta') {
+    const parsed = tryParseJson(event.content)
+    if (isRecord(parsed)) {
+      if ('query' in parsed && Array.isArray(parsed.results)) {
+        const bullets = parsed.results
+          .slice(0, 3)
+          .map((result) => {
+            if (!isRecord(result)) {
+              return null
+            }
+            const title = typeof result.title === 'string' ? result.title : 'Untitled result'
+            const snippet =
+              typeof result.content === 'string' ? compactText(result.content, 120) : ''
+            return snippet ? `${title}: ${snippet}` : title
+          })
+          .filter((value): value is string => Boolean(value))
+
+        const links = parsed.results
+          .slice(0, 3)
+          .map((result) => {
+            if (!isRecord(result) || typeof result.url !== 'string') {
+              return null
+            }
+            return {
+              label:
+                typeof result.title === 'string' && result.title.trim()
+                  ? result.title
+                  : result.url,
+              url: result.url,
+            }
+          })
+          .filter((value): value is { label: string; url: string } => Boolean(value))
+
+        return {
+          title:
+            event.type === 'tool'
+              ? 'Searching the web'
+              : event.type === 'tool_result'
+                ? 'Search results'
+                : event.title,
+          summary:
+            typeof parsed.query === 'string'
+              ? `Query: ${parsed.query}`
+              : `${parsed.results.length} search results returned.`,
+          bullets,
+          links,
+          metadata: {
+            ...(typeof parsed.response_time === 'number'
+              ? { response_time_s: parsed.response_time }
+              : {}),
+            ...(typeof parsed.results.length === 'number'
+              ? { results: parsed.results.length }
+              : {}),
+          },
+        }
+      }
+
+      if ('query' in parsed) {
+        return {
+          title: 'Preparing web search',
+          summary:
+            typeof parsed.query === 'string' ? `Query: ${parsed.query}` : 'Preparing search.',
+          bullets: [],
+          links: [],
+          metadata: event.metadata,
+        }
+      }
+    }
+  }
+
+  return {
+    title: event.title,
+    summary: event.content,
+    bullets: [],
+    links: [],
+    metadata: event.metadata,
+  }
+}
+
+function tryParseJson(value: string): unknown {
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isFunctionCallRecord(
+  value: unknown,
+): value is Record<'arguments' | 'name', string> & Record<string, unknown> {
+  return isRecord(value) && value.type === 'function_call' && typeof value.arguments === 'string'
+}
+
+function compactText(value: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= maxLength) {
+    return normalized
+  }
+  return `${normalized.slice(0, maxLength - 1)}...`
 }
 
 function applyTraceEvent(trace: ChatTraceEvent[], incomingEvent: ChatTraceEvent): ChatTraceEvent[] {
