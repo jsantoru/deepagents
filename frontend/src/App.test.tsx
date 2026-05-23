@@ -92,7 +92,7 @@ describe('App chat flow', () => {
     await user.click(screen.getByRole('button', { name: 'Send prompt' }))
 
     expect(await screen.findByText('Run trace')).toBeVisible()
-    expect(await screen.findByText('Search results')).toBeVisible()
+    expect(await screen.findByText('Search results: internet_search')).toBeVisible()
     expect(await screen.findByText('Query: What is LangGraph?')).toBeVisible()
     expect(await screen.findByText(/LangGraph docs:/)).toBeVisible()
     expect(screen.queryByText(/tool_call_id='call_123'/)).not.toBeInTheDocument()
@@ -178,7 +178,7 @@ describe('App chat flow', () => {
 
     expect(await screen.findByText('Planning next steps')).toBeVisible()
     expect(await screen.findByText('Search: latest langgraph release')).toBeVisible()
-    expect(await screen.findByText('Search results')).toBeVisible()
+    expect(await screen.findByText('Search results: internet_search')).toBeVisible()
     expect(await screen.findByText(/Release notes:/)).toBeVisible()
   })
 })

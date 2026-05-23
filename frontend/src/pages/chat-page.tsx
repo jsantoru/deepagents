@@ -277,9 +277,9 @@ function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
             {!display.summary && !display.bullets.length && !display.links.length ? (
               <TraceSummary event={event} summary={event.content} />
             ) : null}
-            {Object.keys(display.metadata).length ? (
+            {Object.keys(filterDisplayMetadata(display.metadata)).length ? (
               <div className="mt-3 flex flex-wrap gap-2">
-                {Object.entries(display.metadata).map(([key, value]) => (
+                {Object.entries(filterDisplayMetadata(display.metadata)).map(([key, value]) => (
                   <Badge
                     key={key}
                     className="rounded-full border border-current/10 bg-transparent px-3 py-1 text-[11px] tracking-[0.18em] text-current/70"
@@ -332,6 +332,8 @@ type TraceDisplay = {
 }
 
 function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
+  const resolvedToolName = resolveToolName(event)
+
   if (event.type === 'assistant' || event.type === 'assistant_delta') {
     const normalizedContent = normalizeStructuredPayloadText(
       unwrapStructuredToolContent(event.content),
@@ -423,12 +425,7 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
         )
 
         return {
-          title:
-            event.type === 'tool'
-              ? 'Searching the web'
-              : event.type === 'tool_result'
-                ? 'Search results'
-                : event.title,
+          title: resolveToolTitle(event, resolvedToolName),
           summary:
             typeof parsed.query === 'string'
               ? `Query: ${parsed.query}`
@@ -449,12 +446,12 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
 
       if ('query' in parsed) {
         return {
-          title: 'Preparing web search',
+          title: resolveToolTitle(event, resolvedToolName),
           summary:
             typeof parsed.query === 'string' ? `Query: ${parsed.query}` : 'Preparing search.',
           bullets: [],
           links: [],
-          metadata: event.metadata,
+          metadata: withResolvedToolName(event.metadata, resolvedToolName),
         }
       }
     }
@@ -462,7 +459,7 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
     if (looksLikeJsonFragment(normalizedContent)) {
       const queries = extractSearchQueriesFromJsonText(normalizedContent)
       return {
-        title: event.type === 'tool_result' ? 'Search results' : 'Searching the web',
+        title: resolveToolTitle(event, resolvedToolName),
         summary:
           queries[0]
             ? `Query: ${queries[0]}`
@@ -471,7 +468,7 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay {
               : 'Receiving search results...',
         bullets: [],
         links: [],
-        metadata: event.metadata,
+        metadata: withResolvedToolName(event.metadata, resolvedToolName),
       }
     }
   }
@@ -509,6 +506,77 @@ function compactText(value: string, maxLength: number): string {
     return normalized
   }
   return `${normalized.slice(0, maxLength - 1)}...`
+}
+
+function filterDisplayMetadata(
+  metadata: Record<string, string | number>,
+): Record<string, string | number> {
+  return Object.fromEntries(
+    Object.entries(metadata).filter(([key, value]) => {
+      if (key === 'tool_name' && value === 'tool') {
+        return false
+      }
+
+      return true
+    }),
+  )
+}
+
+function resolveToolName(event: ChatTraceEvent): string | undefined {
+  const metadataToolName = typeof event.metadata.tool_name === 'string' ? event.metadata.tool_name : undefined
+  if (metadataToolName && metadataToolName !== 'tool') {
+    return metadataToolName
+  }
+
+  return extractWrappedToolName(event.content)
+}
+
+function extractWrappedToolName(value: string): string | undefined {
+  const singleQuotedMatch = value.match(/\sname='([^']+)'/)
+  if (singleQuotedMatch?.[1]) {
+    return singleQuotedMatch[1]
+  }
+
+  const doubleQuotedMatch = value.match(/\sname="([^"]+)"/)
+  if (doubleQuotedMatch?.[1]) {
+    return doubleQuotedMatch[1]
+  }
+
+  return undefined
+}
+
+function resolveToolTitle(event: ChatTraceEvent, toolName?: string): string {
+  if (event.type === 'tool_result') {
+    return toolName ? `Search results: ${toolName}` : 'Search results'
+  }
+
+  if (event.type === 'tool') {
+    return toolName ? `Using tool: ${toolName}` : 'Searching the web'
+  }
+
+  if (event.type === 'tool_delta') {
+    return toolName ? `Using tool: ${toolName}` : 'Searching the web'
+  }
+
+  if (event.type === 'tool_error') {
+    return toolName ? `Tool error: ${toolName}` : 'Tool error'
+  }
+
+  return event.title
+}
+
+function withResolvedToolName(
+  metadata: Record<string, string | number>,
+  toolName?: string,
+): Record<string, string | number> {
+  if (!toolName) {
+    return metadata
+  }
+
+  return {
+    ...metadata,
+    tool_name: toolName,
+  }
 }
 
 function looksLikeJsonFragment(value: string): boolean {
