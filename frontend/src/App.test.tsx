@@ -91,13 +91,16 @@ describe('App chat flow', () => {
     await user.type(await screen.findByLabelText('Message'), 'What is LangGraph?')
     await user.click(screen.getByRole('button', { name: 'Send prompt' }))
 
-    expect(await screen.findByText('Run trace')).toBeVisible()
     expect(await screen.findByText('Search results: internet_search')).toBeVisible()
     expect(await screen.findByText('Query: What is LangGraph?')).toBeVisible()
     expect(await screen.findByText(/LangGraph docs:/)).toBeVisible()
     expect(screen.queryByText(/tool_call_id='call_123'/)).not.toBeInTheDocument()
     expect(await screen.findByText('runtime', { selector: 'strong' })).toBeVisible()
     expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      message: 'What is LangGraph?',
+      research_mode: 'standard',
+    })
   })
 
   it('preserves streamed trace order when the final snapshot arrives', async () => {
@@ -245,6 +248,54 @@ describe('App chat flow', () => {
     expect(await screen.findByText('Thinking...')).toBeVisible()
     expect(screen.queryByText(/"summary":\[\]/)).not.toBeInTheDocument()
     expect(screen.queryByText('reasoning_steps: 1')).not.toBeInTheDocument()
+  })
+
+  it('sends the selected light research mode to the backend', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: createSseStream([
+        {
+          event: 'final',
+          data: {
+            conversation_id: 'conversation-5',
+            run_id: 'run-5',
+            answer: 'Done.',
+            trace: [
+              {
+                id: 'final-answer-5',
+                type: 'final',
+                title: 'Final answer',
+                content: 'Done.',
+                metadata: {},
+              },
+            ],
+            metrics: {
+              model_name: 'openai:gpt-5-nano',
+              latency_ms: 55,
+              input_tokens: 8,
+              output_tokens: 4,
+              total_tokens: 12,
+              estimated_cost_usd: 0.000002,
+              search_calls: 0,
+            },
+          },
+        },
+      ]),
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: /Light/i }))
+    await user.type(await screen.findByLabelText('Message'), 'Quick check')
+    await user.click(screen.getByRole('button', { name: 'Send prompt' }))
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      message: 'Quick check',
+      research_mode: 'light',
+    })
   })
 
   it('suppresses unresolved tool-result placeholders until a query or results can be parsed', async () => {

@@ -25,7 +25,12 @@ import remarkGfm from 'remark-gfm'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { type ChatMetrics, type ChatTraceEvent, streamChatMessage } from '@/lib/api'
+import {
+  type ChatMetrics,
+  type ChatTraceEvent,
+  type ResearchMode,
+  streamChatMessage,
+} from '@/lib/api'
 
 type TranscriptMessage = {
   id: string
@@ -63,6 +68,7 @@ export function ChatPage() {
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string>()
   const [lastSubmittedPrompt, setLastSubmittedPrompt] = useState('')
+  const [researchMode, setResearchMode] = useState<ResearchMode>('standard')
   const bottomAnchorRef = useRef<HTMLDivElement | null>(null)
 
   const hasMessages = messages.length > 0
@@ -102,7 +108,7 @@ export function ChatPage() {
     setIsSending(true)
 
     try {
-      const response = await streamChatMessage(trimmedDraft, conversationId, {
+      const response = await streamChatMessage(trimmedDraft, conversationId, researchMode, {
         onTrace: (event) => {
           setMessages((currentMessages) =>
             currentMessages.map((message) =>
@@ -164,7 +170,9 @@ export function ChatPage() {
               isSending={isSending}
               lastSubmittedPrompt={lastSubmittedPrompt}
               onChange={setDraft}
+              onModeChange={setResearchMode}
               onSubmit={handleSubmit}
+              researchMode={researchMode}
             />
             <div className="mt-6">
               {starterPrompts.map(({ icon: Icon, text }) => (
@@ -199,7 +207,9 @@ export function ChatPage() {
                 isSending={isSending}
                 lastSubmittedPrompt={lastSubmittedPrompt}
                 onChange={setDraft}
+                onModeChange={setResearchMode}
                 onSubmit={handleSubmit}
+                researchMode={researchMode}
               />
             </div>
           </div>
@@ -216,7 +226,9 @@ type PromptComposerProps = {
   isSending: boolean
   lastSubmittedPrompt: string
   onChange: (value: string) => void
+  onModeChange: (mode: ResearchMode) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  researchMode: ResearchMode
 }
 
 function PromptComposer({
@@ -226,7 +238,9 @@ function PromptComposer({
   isSending,
   lastSubmittedPrompt,
   onChange,
+  onModeChange,
   onSubmit,
+  researchMode,
 }: PromptComposerProps) {
   const disabled = isSending
   const placeholder = isDocked ? 'Ask for follow-up changes' : 'Message Codex'
@@ -251,7 +265,7 @@ function PromptComposer({
       <div className="overflow-hidden rounded-[30px] border border-stone-300 bg-white shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
         <Textarea
           aria-label="Message"
-          className="min-h-[128px] resize-none border-0 bg-transparent px-5 py-4 text-[1.05rem] leading-8 text-stone-900 shadow-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:bg-transparent disabled:text-stone-400 disabled:opacity-100"
+          className="min-h-[92px] max-h-[600px] resize-none overflow-y-auto border-0 bg-transparent px-5 py-4 text-[1.05rem] leading-8 text-stone-900 shadow-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:bg-transparent disabled:text-stone-400 disabled:opacity-100"
           disabled={disabled}
           placeholder={placeholder}
           value={disabled ? '' : draft}
@@ -268,16 +282,47 @@ function PromptComposer({
             </button>
             <div className="inline-flex items-center gap-2 text-orange-600">
               <AlertCircle className="h-4 w-4" />
-              <span>Full access</span>
+              <span>Deep research</span>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-4 text-sm text-stone-500">
             {isSending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
             <div className="inline-flex items-center gap-1">
-              <span>GPT-5.4</span>
+              <span>OpenAI</span>
             </div>
-            <div className="inline-flex items-center gap-1">
-              <span>Medium</span>
+            <div
+              aria-label="Research mode"
+              className="inline-flex items-center rounded-full border border-stone-200 bg-stone-50 p-1 text-xs text-stone-600"
+              role="group"
+            >
+              <button
+                type="button"
+                className={[
+                  'rounded-full px-3 py-1.5 transition',
+                  researchMode === 'light'
+                    ? 'bg-white text-stone-900 shadow-sm'
+                    : 'text-stone-500 hover:text-stone-900',
+                ].join(' ')}
+                disabled={disabled}
+                onClick={() => onModeChange('light')}
+              >
+                Light
+                <span className="ml-1 text-[11px] text-current/70">&lt;1 min</span>
+              </button>
+              <button
+                type="button"
+                className={[
+                  'rounded-full px-3 py-1.5 transition',
+                  researchMode === 'standard'
+                    ? 'bg-white text-stone-900 shadow-sm'
+                    : 'text-stone-500 hover:text-stone-900',
+                ].join(' ')}
+                disabled={disabled}
+                onClick={() => onModeChange('standard')}
+              >
+                Standard
+                <span className="ml-1 text-[11px] text-current/70">up to 5 min</span>
+              </button>
             </div>
             <button
               type="button"
@@ -329,9 +374,9 @@ function ConversationMessages({ messages }: { messages: TranscriptMessage[] }) {
               : 'max-w-4xl border-stone-200 bg-white/92 text-stone-900',
           ].join(' ')}
         >
-          <div className="mb-2 text-xs uppercase tracking-[0.28em] text-current/60">
-            {message.role === 'user' ? 'You' : 'Codex'}
-          </div>
+          {message.role === 'user' ? (
+            <div className="mb-2 text-xs uppercase tracking-[0.28em] text-current/60">You</div>
+          ) : null}
           <MessageBody message={message} />
           {message.trace?.length ? <TraceTimeline trace={message.trace} /> : null}
           {message.metrics ? <RunMetrics metrics={message.metrics} /> : null}
@@ -374,7 +419,6 @@ function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
 
   return (
     <div className="mt-5 space-y-3 border-t border-current/10 pt-4">
-      <div className="text-xs uppercase tracking-[0.24em] text-current/60">Run trace</div>
       {orderedTrace.map((event, index) => {
         const Icon = getTraceIcon(event.type)
         const display = formatTraceEvent(event)

@@ -1,6 +1,9 @@
 from deepagents_app.services.agent_service import (
     ANALYST_SYSTEM_PROMPT,
+    LIGHT_RESEARCH_ADDENDUM,
+    STANDARD_RESEARCH_ADDENDUM,
     _normalize_message_content,
+    build_system_prompt,
 )
 
 
@@ -35,3 +38,19 @@ def test_analyst_system_prompt_requires_verified_citations_and_osir_format() -> 
     assert "OSIR-style open source intelligence report" in ANALYST_SYSTEM_PROMPT
     assert "without any classified markings" in ANALYST_SYSTEM_PROMPT
     assert "End the report with a clearly labeled Sources section" in ANALYST_SYSTEM_PROMPT
+
+
+def test_build_system_prompt_uses_light_research_constraints() -> None:
+    prompt = build_system_prompt("light")
+
+    assert "finish in under 1 minute" in prompt
+    assert LIGHT_RESEARCH_ADDENDUM in prompt
+    assert STANDARD_RESEARCH_ADDENDUM not in prompt
+
+
+def test_build_system_prompt_uses_standard_research_constraints() -> None:
+    prompt = build_system_prompt("standard")
+
+    assert "up to 5 minutes" in prompt
+    assert STANDARD_RESEARCH_ADDENDUM in prompt
+    assert LIGHT_RESEARCH_ADDENDUM not in prompt

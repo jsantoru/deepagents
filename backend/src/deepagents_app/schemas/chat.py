@@ -1,9 +1,14 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+ResearchMode = Literal["light", "standard"]
 
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
     conversation_id: str | None = None
+    research_mode: ResearchMode = "standard"
 
 
 class ChatTraceEvent(BaseModel):

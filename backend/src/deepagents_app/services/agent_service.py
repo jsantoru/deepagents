@@ -10,9 +10,9 @@ from deepagents import create_deep_agent
 from tavily import TavilyClient
 
 from deepagents_app.core.config import get_settings
-from deepagents_app.schemas.chat import ChatRequest, ChatTraceEvent
+from deepagents_app.schemas.chat import ChatRequest, ChatTraceEvent, ResearchMode
 
-ANALYST_SYSTEM_PROMPT = """
+ANALYST_SYSTEM_PROMPT_BASE = """
 You are an open-source intelligence analyst performing professional research work for a user.
 
 Operating standard:
@@ -53,6 +53,27 @@ Source handling in the final deliverable:
 If the available evidence is weak, incomplete, or contradictory, say so plainly and limit conclusions to what the sources support.
 """.strip()
 
+LIGHT_RESEARCH_ADDENDUM = """
+
+Research mode:
+- Use Light mode for faster turnarounds.
+- Aim to finish in under 1 minute when feasible.
+- Keep the search plan narrow and focused on the highest-signal sources.
+- Prefer a concise answer over exhaustive coverage.
+- Verify sources you use, but avoid broad exploration unless the question clearly requires it.
+""".strip()
+
+STANDARD_RESEARCH_ADDENDUM = """
+
+Research mode:
+- Use Standard mode for deeper research.
+- This run may take up to 5 minutes when the task benefits from broader verification.
+- Explore a wider source set when needed to validate claims, compare perspectives, or surface uncertainty.
+- Favor completeness and corroboration over speed.
+""".strip()
+
+ANALYST_SYSTEM_PROMPT = ANALYST_SYSTEM_PROMPT_BASE
+
 
 @dataclass(slots=True)
 class AgentRunResult:
@@ -83,9 +104,10 @@ class AgentService(ABC):
 class DeepAgentsService(AgentService):
     def __init__(self) -> None:
         self.settings = get_settings()
-        self._agent = self._build_agent()
+        self._agents: dict[ResearchMode, object] = {}
+        self._tools = self._build_tools()
 
-    def _build_agent(self):
+    def _build_tools(self):
         tavily_client = TavilyClient(api_key=self.settings.tavily_api_key)
 
         def internet_search(
@@ -103,15 +125,19 @@ class DeepAgentsService(AgentService):
                 topic=topic,
             )
 
+        return [internet_search]
+
+    def _build_agent(self, research_mode: ResearchMode):
         return create_deep_agent(
             model=self.settings.agent_model,
-            tools=[internet_search],
-            system_prompt=ANALYST_SYSTEM_PROMPT,
+            tools=self._tools,
+            system_prompt=build_system_prompt(research_mode),
         )
 
     async def chat(self, payload: ChatRequest) -> AgentRunResult:
+        agent = self._get_agent(payload.research_mode)
         result = await asyncio.to_thread(
-            self._agent.invoke,
+            agent.invoke,
             {"messages": [{"role": "user", "content": payload.message}]},
         )
         return _build_run_result(result, self.settings.agent_model)
@@ -121,11 +147,12 @@ class DeepAgentsService(AgentService):
         payload: ChatRequest,
         on_event: Callable[[ChatTraceEvent], Awaitable[None]],
     ) -> AgentRunResult:
+        agent = self._get_agent(payload.research_mode)
         stream_input = {"messages": [{"role": "user", "content": payload.message}]}
         last_values: dict | None = None
         active_message_ids: set[str] = set()
 
-        async for part in self._agent.astream(
+        async for part in agent.astream(
             stream_input,
             stream_mode=["messages", "tools", "values"],
         ):
@@ -179,6 +206,20 @@ class DeepAgentsService(AgentService):
             raise RuntimeError("Agent stream completed without final state.")
 
         return _build_run_result(last_values, self.settings.agent_model)
+
+    def _get_agent(self, research_mode: ResearchMode):
+        agent = self._agents.get(research_mode)
+        if agent is None:
+            agent = self._build_agent(research_mode)
+            self._agents[research_mode] = agent
+        return agent
+
+
+def build_system_prompt(research_mode: ResearchMode) -> str:
+    mode_addendum = (
+        LIGHT_RESEARCH_ADDENDUM if research_mode == "light" else STANDARD_RESEARCH_ADDENDUM
+    )
+    return f"{ANALYST_SYSTEM_PROMPT_BASE}\n\n{mode_addendum}".strip()
 
 
 def _normalize_message_content(content: object) -> str:

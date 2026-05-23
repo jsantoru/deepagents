@@ -8,6 +8,8 @@ export type ChatMetrics = {
   search_calls: number
 }
 
+export type ResearchMode = 'light' | 'standard'
+
 export type ChatTraceEvent = {
   id: string
   type: string
@@ -49,6 +51,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000
 export async function sendChatMessage(
   message: string,
   conversationId?: string,
+  researchMode: ResearchMode = 'standard',
 ): Promise<ChatResponse> {
   const response = await fetch(`${API_BASE_URL}/chat`, {
     method: 'POST',
@@ -58,6 +61,7 @@ export async function sendChatMessage(
     body: JSON.stringify({
       message,
       conversation_id: conversationId,
+      research_mode: researchMode,
     }),
   })
 
@@ -77,6 +81,7 @@ type StreamChatCallbacks = {
 export async function streamChatMessage(
   message: string,
   conversationId: string | undefined,
+  researchMode: ResearchMode,
   callbacks: StreamChatCallbacks,
 ): Promise<ChatResponse> {
   const response = await fetch(`${API_BASE_URL}/chat/stream`, {
@@ -87,6 +92,7 @@ export async function streamChatMessage(
     body: JSON.stringify({
       message,
       conversation_id: conversationId,
+      research_mode: researchMode,
     }),
   })
 
