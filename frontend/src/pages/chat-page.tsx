@@ -374,7 +374,13 @@ function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
               <Icon className="h-3.5 w-3.5" />
               {display.title}
             </div>
-            {display.summary ? <TraceSummary event={event} summary={display.summary} /> : null}
+            {display.summary ? (
+              <TraceSummary
+                animatePulse={display.animatePulse}
+                event={event}
+                summary={display.summary}
+              />
+            ) : null}
             {display.bullets.length ? (
               <div className="mt-3 space-y-2">
                 {display.bullets.map((bullet) => (
@@ -426,7 +432,15 @@ function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
   )
 }
 
-function TraceSummary({ event, summary }: { event: ChatTraceEvent; summary: string }) {
+function TraceSummary({
+  animatePulse = false,
+  event,
+  summary,
+}: {
+  animatePulse?: boolean
+  event: ChatTraceEvent
+  summary: string
+}) {
   if (event.type === 'final') {
     return (
       <div className="prose prose-sm max-w-none whitespace-pre-wrap prose-headings:mt-4 prose-headings:text-stone-950 prose-p:leading-7 prose-li:leading-7 prose-strong:text-stone-950 prose-code:rounded prose-code:bg-stone-100 prose-code:px-1 prose-code:py-0.5 prose-pre:bg-stone-950 prose-pre:text-stone-50">
@@ -435,7 +449,16 @@ function TraceSummary({ event, summary }: { event: ChatTraceEvent; summary: stri
     )
   }
 
-  return <p className="whitespace-pre-wrap text-sm leading-6">{summary}</p>
+  return (
+    <p
+      className={[
+        'whitespace-pre-wrap text-sm leading-6',
+        animatePulse ? 'animate-pulse text-current/70' : '',
+      ].join(' ')}
+    >
+      {summary}
+    </p>
+  )
 }
 
 function getTraceIcon(type: string) {
@@ -458,6 +481,7 @@ type TraceDisplay = {
   bullets: string[]
   links: Array<{ label: string; url: string }>
   metadata: Record<string, string | number>
+  animatePulse?: boolean
 }
 
 function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
@@ -476,7 +500,14 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
       if (toolCalls.length || reasoningSteps.length) {
         const reasoningSummary = extractReasoningSummary(reasoningSteps)
         if (!toolCalls.length && !reasoningSummary) {
-          return null
+          return {
+            title: 'Thinking',
+            summary: 'Thinking...',
+            bullets: [],
+            links: [],
+            metadata: {},
+            animatePulse: true,
+          }
         }
         return {
           title: toolCalls.length ? 'Planning next steps' : 'Reasoning',
@@ -494,6 +525,7 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
             reasoningSummary && reasoningSteps.length > 0
               ? { reasoning_steps: reasoningSteps.length }
               : {},
+          animatePulse: false,
         }
       }
     }
@@ -507,6 +539,7 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
           bullets: queries.map((query) => `Search: ${query}`),
           links: [],
           metadata: event.metadata,
+          animatePulse: false,
         }
       }
     }
@@ -581,6 +614,7 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
               : {}),
             ...(domains.length ? { sources: domains.slice(0, 3).join(', ') } : {}),
           },
+          animatePulse: false,
         }
       }
 
@@ -592,6 +626,7 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
           bullets: [],
           links: [],
           metadata: withResolvedToolName(event.metadata, resolvedToolName),
+          animatePulse: event.type !== 'tool_result',
         }
       }
     }
@@ -609,6 +644,7 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
         bullets: [],
         links: [],
         metadata: withResolvedToolName(event.metadata, resolvedToolName),
+        animatePulse: event.type !== 'tool_result',
       }
     }
   }
@@ -619,6 +655,7 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
     bullets: [],
     links: [],
     metadata: event.metadata,
+    animatePulse: false,
   }
 }
 

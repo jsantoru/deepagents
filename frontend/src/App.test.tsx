@@ -181,6 +181,72 @@ describe('App chat flow', () => {
     expect(await screen.findByText('Search results: internet_search')).toBeVisible()
     expect(await screen.findByText(/Release notes:/)).toBeVisible()
   })
+
+  it('shows a thinking state for empty reasoning markers without leaking raw json', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: createSseStream([
+        {
+          event: 'trace',
+          data: {
+            id: 'thinking-1',
+            type: 'assistant',
+            title: 'Agent note',
+            content:
+              '[{"id":"rs_1","summary":[],"type":"reasoning","index":0}]',
+            metadata: {},
+          },
+        },
+        {
+          event: 'final',
+          data: {
+            conversation_id: 'conversation-3',
+            run_id: 'run-3',
+            answer: 'Done.',
+            trace: [
+              {
+                id: 'thinking-1',
+                type: 'assistant',
+                title: 'Agent note',
+                content:
+                  '[{"id":"rs_1","summary":[],"type":"reasoning","index":0}]',
+                metadata: {},
+              },
+              {
+                id: 'final-answer-3',
+                type: 'final',
+                title: 'Final answer',
+                content: 'Done.',
+                metadata: {},
+              },
+            ],
+            metrics: {
+              model_name: 'openai:gpt-5-nano',
+              latency_ms: 80,
+              input_tokens: 10,
+              output_tokens: 6,
+              total_tokens: 16,
+              estimated_cost_usd: 0.000003,
+              search_calls: 0,
+            },
+          },
+        },
+      ]),
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await user.type(await screen.findByLabelText('Message'), 'Think first')
+    await user.click(screen.getByRole('button', { name: 'Send prompt' }))
+
+    expect(await screen.findByText('Thinking')).toBeVisible()
+    expect(await screen.findByText('Thinking...')).toBeVisible()
+    expect(screen.queryByText(/"summary":\[\]/)).not.toBeInTheDocument()
+    expect(screen.queryByText('reasoning_steps: 1')).not.toBeInTheDocument()
+  })
 })
 
 function createSseStream(events: Array<{ event: string; data: unknown }>) {
