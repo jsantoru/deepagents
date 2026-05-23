@@ -1,0 +1,39 @@
+[project]
+name = "deepagents-chat-backend"
+version = "0.1.0"
+description = "Backend service for a LangChain DeepAgents chat application."
+readme = "../README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "asyncpg>=0.30.0",
+  "deepagents>=0.6.1",
+  "fastapi>=0.115.12",
+  "langchain-openai>=0.3.18",
+  "pydantic-settings>=2.9.1",
+  "sqlalchemy>=2.0.41",
+  "tavily-python>=0.7.2",
+  "uvicorn[standard]>=0.34.2",
+]
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28.1",
+  "pytest>=8.3.5",
+  "pytest-asyncio>=0.26.0",
+  "ruff>=0.11.11",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/deepagents_app"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
