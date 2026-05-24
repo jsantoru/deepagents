@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Awaitable, Callable, Generator, Sequence
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from deepagents_app.services.agent_service import AgentRunResult, AgentService
 
 class StubAgentService(AgentService):
     invocations: list[list[dict[str, str]]] = []
+    stream_delay_s: float = 0.0
 
     async def chat(
         self,
@@ -97,6 +99,8 @@ class StubAgentService(AgentService):
         ]
         for event in trace[:-1]:
             await on_event(event)
+        if self.stream_delay_s > 0:
+            await asyncio.sleep(self.stream_delay_s)
 
         return AgentRunResult(
             answer=f"echo: {payload.message}",
@@ -118,12 +122,11 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[TestCli
 
     app = create_application()
     StubAgentService.invocations = []
+    StubAgentService.stream_delay_s = 0.0
     app.dependency_overrides[get_agent_service] = StubAgentService
 
     with TestClient(app) as test_client:
         yield test_client
 
     get_settings.cache_clear()
-    import asyncio
-
     asyncio.run(dispose_engine())

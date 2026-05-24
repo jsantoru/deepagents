@@ -14,7 +14,11 @@ from deepagents_app.core.config import get_settings
 @lru_cache
 def get_engine() -> AsyncEngine:
     settings = get_settings()
-    return create_async_engine(settings.database_url, future=True)
+    return create_async_engine(
+        settings.database_url,
+        future=True,
+        pool_pre_ping=True,
+    )
 
 
 @lru_cache

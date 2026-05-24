@@ -77,10 +77,18 @@ class ChatRequest(BaseModel):
 
 class ChatTraceEvent(BaseModel):
     id: str = Field(min_length=1)
+    sequence: int | None = Field(default=None, exclude_if=lambda value: value is None)
     type: str
     title: str
     content: str
     metadata: dict[str, str | int | float] = Field(default_factory=dict)
+
+
+class AgentRunStatus(BaseModel):
+    run_id: str
+    conversation_id: str
+    status: str
+    error_message: str | None = None
 
 
 class ChatRunMetrics(BaseModel):

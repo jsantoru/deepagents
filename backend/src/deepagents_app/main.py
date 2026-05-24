@@ -6,12 +6,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from deepagents_app.api.routes import api_router
 from deepagents_app.core.config import get_settings
 from deepagents_app.core.db import dispose_engine, init_db
+from deepagents_app.services.background_runner import shutdown_background_runner
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await init_db()
     yield
+    await shutdown_background_runner()
     await dispose_engine()
 
 

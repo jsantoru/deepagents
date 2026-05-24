@@ -1,6 +1,11 @@
 from pydantic import BaseModel
 
-from deepagents_app.schemas.chat import ChatRunMetrics, ChatTraceEvent, ConversationAttachment
+from deepagents_app.schemas.chat import (
+    AgentRunStatus,
+    ChatRunMetrics,
+    ChatTraceEvent,
+    ConversationAttachment,
+)
 
 
 class AdminOverviewResponse(BaseModel):
@@ -49,3 +54,4 @@ class ConversationDetailResponse(BaseModel):
     conversation_id: str
     title: str
     messages: list[ConversationMessage]
+    active_run: AgentRunStatus | None = None

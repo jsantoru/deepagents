@@ -2,13 +2,15 @@ import hashlib
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from time import perf_counter
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from deepagents_app.core.config import get_settings
 from deepagents_app.core.pricing import estimate_cost_usd
-from deepagents_app.models.chat import AgentRun, Conversation, Message, MessageAttachment
+from deepagents_app.models.chat import AgentRun, Conversation, Message, MessageAttachment, TraceEvent
 from deepagents_app.schemas.admin import (
     AdminOverviewResponse,
     ConversationDetailResponse,
@@ -19,6 +21,7 @@ from deepagents_app.schemas.admin import (
     AdminRunSummary,
 )
 from deepagents_app.schemas.chat import (
+    AgentRunStatus,
     ChatRequest,
     ChatResponse,
     ChatRunMetrics,
@@ -87,6 +90,17 @@ class MetricsService:
 
         await self.session.commit()
         return conversation
+
+    async def create_pending_run(self, conversation_id: str) -> AgentRun:
+        run = AgentRun(
+            conversation_id=conversation_id,
+            model_name=get_settings().agent_model,
+            status="pending",
+        )
+        self.session.add(run)
+        await self.session.commit()
+        await self.session.refresh(run)
+        return run
 
     async def build_conversation_messages(self, conversation_id: str) -> list[dict[str, str]]:
         messages = await self._load_conversation_messages(conversation_id)
@@ -264,6 +278,165 @@ class MetricsService:
                 )
                 for message in messages
             ],
+            active_run=await self.get_active_run_status(conversation_id),
+        )
+
+    async def get_agent_run(self, run_id: str) -> AgentRun | None:
+        return await self.session.get(AgentRun, run_id)
+
+    async def get_active_run_status(self, conversation_id: str) -> AgentRunStatus | None:
+        run = (
+            await self.session.execute(
+                select(AgentRun)
+                .where(AgentRun.conversation_id == conversation_id)
+                .where(AgentRun.status.in_(("pending", "running")))
+                .order_by(AgentRun.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if run is None:
+            return None
+        return AgentRunStatus(
+            run_id=run.id,
+            conversation_id=run.conversation_id,
+            status=run.status,
+            error_message=run.error_message,
+        )
+
+    async def append_trace_event(self, run_id: str, event: ChatTraceEvent) -> ChatTraceEvent:
+        current_max = await self.session.scalar(
+            select(func.max(TraceEvent.sequence)).where(TraceEvent.run_id == run_id)
+        )
+        sequence = int(current_max or 0) + 1
+        record = TraceEvent(
+            event_id=event.id,
+            run_id=run_id,
+            sequence=sequence,
+            event_type=event.type,
+            title=event.title,
+            content=event.content,
+            metadata_json=json.dumps(event.metadata),
+        )
+        self.session.add(record)
+        await self.session.commit()
+        return ChatTraceEvent(
+            id=event.id,
+            sequence=sequence,
+            type=event.type,
+            title=event.title,
+            content=event.content,
+            metadata=event.metadata,
+        )
+
+    async def get_trace_events(
+        self,
+        run_id: str,
+        after_sequence: int = 0,
+    ) -> list[ChatTraceEvent]:
+        events = (
+            await self.session.execute(
+                select(TraceEvent)
+                .where(TraceEvent.run_id == run_id)
+                .where(TraceEvent.sequence > after_sequence)
+                .order_by(TraceEvent.sequence.asc())
+            )
+        ).scalars().all()
+        return [
+            ChatTraceEvent(
+                id=event.event_id,
+                sequence=event.sequence,
+                type=event.event_type,
+                title=event.title,
+                content=event.content,
+                metadata=self._deserialize_metadata(event.metadata_json),
+            )
+            for event in events
+        ]
+
+    async def mark_run_running(self, run_id: str) -> AgentRun:
+        run = await self._require_run(run_id)
+        run.status = "running"
+        run.error_message = None
+        await self.session.commit()
+        return run
+
+    async def mark_run_failed(self, run_id: str, error_message: str) -> AgentRun:
+        run = await self._require_run(run_id)
+        run.status = "failed"
+        run.error_message = error_message
+        run.completed_at = datetime.now(timezone.utc)
+        await self.session.commit()
+        return run
+
+    async def finalize_run(
+        self,
+        run_id: str,
+        agent_result: AgentRunResult,
+        latency_ms: int,
+    ) -> ChatResponse:
+        run = await self._require_run(run_id)
+        existing_trace = await self.get_trace_events(run_id)
+        existing_keys = {(event.id, event.type) for event in existing_trace}
+        for event in agent_result.trace:
+            if (event.id, event.type) in existing_keys:
+                continue
+            existing_trace.append(await self.append_trace_event(run_id, event))
+            existing_keys.add((event.id, event.type))
+
+        run.model_name = agent_result.model_name
+        run.status = "completed"
+        run.latency_ms = latency_ms
+        run.input_tokens = agent_result.input_tokens
+        run.output_tokens = agent_result.output_tokens
+        run.total_tokens = agent_result.total_tokens
+        run.estimated_cost_usd = estimate_cost_usd(
+            model_name=agent_result.model_name,
+            input_tokens=agent_result.input_tokens,
+            output_tokens=agent_result.output_tokens,
+        )
+        run.search_calls = agent_result.search_calls
+        trace = sorted(
+            existing_trace,
+            key=lambda event: (event.sequence or 0, event.type == "final"),
+        )
+        run.trace_data = json.dumps([event.model_dump() for event in trace])
+        run.completed_at = datetime.now(timezone.utc)
+        run.error_message = None
+        self.session.add(
+            Message(
+                conversation_id=run.conversation_id,
+                run_id=run.id,
+                role="assistant",
+                content=agent_result.answer,
+            )
+        )
+        await self.session.commit()
+        return ChatResponse(
+            conversation_id=run.conversation_id,
+            run_id=run.id,
+            answer=agent_result.answer,
+            trace=trace,
+            metrics=self._to_metrics(run),
+        )
+
+    async def get_final_response(self, run_id: str) -> ChatResponse:
+        run = await self._require_run(run_id)
+        message = (
+            await self.session.execute(
+                select(Message)
+                .where(Message.run_id == run_id)
+                .where(Message.role == "assistant")
+                .order_by(Message.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one()
+        trace = await self.get_trace_events(run_id)
+        return ChatResponse(
+            conversation_id=run.conversation_id,
+            run_id=run.id,
+            answer=message.content,
+            trace=trace,
+            metrics=self._to_metrics(run),
         )
 
     async def _get_or_create_conversation(self, conversation_id: str | None) -> Conversation:
@@ -359,6 +532,12 @@ class MetricsService:
         await self.session.flush()
         return run
 
+    async def _require_run(self, run_id: str) -> AgentRun:
+        run = await self.session.get(AgentRun, run_id)
+        if run is None:
+            raise ValueError(f"Run {run_id} not found.")
+        return run
+
     @staticmethod
     def _to_metrics(run: AgentRun) -> ChatRunMetrics:
         return ChatRunMetrics(
@@ -379,6 +558,20 @@ class MetricsService:
             return [ChatTraceEvent(**event) for event in trace_list]
         except (json.JSONDecodeError, TypeError, ValueError):
             return []
+
+    @staticmethod
+    def _deserialize_metadata(metadata_json: str) -> dict[str, str | int | float]:
+        try:
+            parsed = json.loads(metadata_json)
+            if isinstance(parsed, dict):
+                return {
+                    str(key): value
+                    for key, value in parsed.items()
+                    if isinstance(value, (str, int, float))
+                }
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return {}
+        return {}
 
 
 def _derive_conversation_title(messages: list[Message]) -> str:

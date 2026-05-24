@@ -23,7 +23,7 @@ import {
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -34,6 +34,7 @@ import {
   type ChatAttachment,
   fetchConversationDetail,
   fetchConversationSummaries,
+  reconnectChatRun,
   type ConversationSummary,
   type ResearchMode,
   streamChatMessage,
@@ -42,6 +43,10 @@ import {
 // --- Stream event debug logger ---
 const _logTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const _logBuffer = new Map<string, { event: ChatTraceEvent; chunks: number }>()
+
+function logChatRoute(label: string, payload: Record<string, unknown>) {
+  console.log(`%c[chat-route] ${label}`, 'color:#0f766e;font-weight:bold', payload)
+}
 
 function logStreamEvent(event: ChatTraceEvent) {
   const isDelta = event.type === 'assistant_delta' || event.type === 'tool_delta'
@@ -105,6 +110,7 @@ const TEXT_ATTACHMENT_ACCEPT =
 const MAX_TEXT_ATTACHMENT_COUNT = 6
 const MAX_TEXT_ATTACHMENT_BYTES = 200_000
 const MAX_TOTAL_TEXT_ATTACHMENT_BYTES = 600_000
+const ACTIVE_RUN_STORAGE_KEY = 'deepagents.active-run'
 
 const starterPrompts = [
   {
@@ -128,6 +134,11 @@ const chromeItems = [
 ]
 
 export function ChatPage() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const routeConversationId = location.pathname.startsWith('/chat/')
+    ? decodeURIComponent(location.pathname.slice('/chat/'.length))
+    : undefined
   const [conversationId, setConversationId] = useState<string>()
   const [conversationTitle, setConversationTitle] = useState('New chat')
   const [draft, setDraft] = useState('')
@@ -139,16 +150,27 @@ export function ChatPage() {
   const [error, setError] = useState<string>()
   const [lastSubmittedPrompt, setLastSubmittedPrompt] = useState('')
   const [researchMode, setResearchMode] = useState<ResearchMode>('standard')
+  const [activeRun, setActiveRun] = useState<{ runId: string; conversationId: string } | null>(() => readActiveRun())
   const bottomAnchorRef = useRef<HTMLDivElement | null>(null)
+  const activeStreamAbortRef = useRef<AbortController | null>(null)
+  const promotedConversationIdRef = useRef<string | null>(null)
 
   const hasMessages = messages.length > 0
-  const isComposerDocked = hasMessages || isSending
+  const isSessionOpen = Boolean(routeConversationId || conversationId)
+  const isComposerDocked = hasMessages || isSending || isSessionOpen
 
   useEffect(() => {
     if (isComposerDocked && typeof bottomAnchorRef.current?.scrollIntoView === 'function') {
       bottomAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
     }
   }, [isComposerDocked, messages.length])
+
+  useEffect(() => {
+    return () => {
+      activeStreamAbortRef.current?.abort()
+      activeStreamAbortRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     void loadConversationSummaries()
@@ -176,28 +198,58 @@ export function ChatPage() {
     }
   }
 
-  const handleOpenConversation = useCallback(async function handleOpenConversation(targetConversationId: string) {
-    if (isSending) {
-      return
-    }
+  function upsertSessionSummary(
+    targetConversationId: string,
+    fallbackTitle: string,
+    fallbackPreview: string,
+  ) {
+    setSessions((currentSessions) => {
+      const existingIndex = currentSessions.findIndex(
+        (conversation) => conversation.conversation_id === targetConversationId,
+      )
+      const nextSummary: ConversationSummary = {
+        conversation_id: targetConversationId,
+        title: fallbackTitle,
+        preview: fallbackPreview,
+        message_count: Math.max(currentSessions[existingIndex]?.message_count ?? 0, 1),
+        last_message_at: new Date().toISOString(),
+      }
 
-    setError(undefined)
-    const response = await fetchConversationDetail(targetConversationId)
-    setConversationId(response.conversation_id)
-    setConversationTitle(response.title)
-    setMessages(
-      response.messages.map((message) => ({
-        id: message.id,
-        role: message.role,
-        content: message.content,
-        attachments: message.attachments ?? [],
-        metrics: message.metrics ?? undefined,
-        trace: message.trace ?? [],
-      })),
-    )
-  }, [isSending])
+      if (existingIndex === -1) {
+        return [nextSummary, ...currentSessions]
+      }
+
+      const nextSessions = [...currentSessions]
+      nextSessions[existingIndex] = {
+        ...nextSessions[existingIndex],
+        title: nextSessions[existingIndex].title || fallbackTitle,
+        preview: nextSessions[existingIndex].preview || fallbackPreview,
+        last_message_at: nextSummary.last_message_at,
+      }
+      return nextSessions
+    })
+  }
+
+  const handleOpenConversation = useCallback(async function handleOpenConversation(targetConversationId: string) {
+    logChatRoute('open-session-click', {
+      targetConversationId,
+      currentPath: location.pathname,
+      conversationId,
+      routeConversationId,
+    })
+    navigate(`/chat/${targetConversationId}`)
+  }, [conversationId, location.pathname, navigate, routeConversationId])
 
   const handleNewChat = useCallback(function handleNewChat() {
+    logChatRoute('new-chat-click', {
+      currentPath: location.pathname,
+      conversationId,
+      routeConversationId,
+      hasMessages,
+      isSending,
+    })
+    activeStreamAbortRef.current?.abort()
+    activeStreamAbortRef.current = null
     setConversationId(undefined)
     setConversationTitle('New chat')
     setMessages([])
@@ -205,7 +257,218 @@ export function ChatPage() {
     setAttachments([])
     setError(undefined)
     setLastSubmittedPrompt('')
-  }, [])
+    setIsSending(false)
+    navigate('/')
+  }, [conversationId, hasMessages, isSending, location.pathname, navigate, routeConversationId])
+
+  useEffect(() => {
+    async function loadSelectedConversation(targetConversationId: string) {
+      logChatRoute('load-selected-session:start', {
+        targetConversationId,
+        currentPath: location.pathname,
+      })
+      setError(undefined)
+      const response = await fetchConversationDetail(targetConversationId)
+      logChatRoute('load-selected-session:response', {
+        targetConversationId,
+        messageCount: response.messages.length,
+        hasActiveRun: Boolean(response.active_run),
+        activeRunStatus: response.active_run?.status,
+      })
+      setConversationId(response.conversation_id)
+      setConversationTitle(response.title)
+      const nextMessages = response.messages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        attachments: message.attachments ?? [],
+        metrics: message.metrics ?? undefined,
+        trace: message.trace ?? [],
+      }))
+      setMessages(nextMessages)
+
+      if (response.active_run && (response.active_run.status === 'pending' || response.active_run.status === 'running')) {
+        const nextActiveRun = {
+          runId: response.active_run.run_id,
+          conversationId: response.active_run.conversation_id,
+        }
+        rememberActiveRun(response.active_run.run_id, response.active_run.conversation_id)
+        setActiveRun(nextActiveRun)
+        await reconnectToActiveRun(response.active_run.run_id, response.conversation_id, nextMessages)
+        return
+      }
+
+      const storedActiveRun = readActiveRun()
+      if (storedActiveRun?.conversationId === response.conversation_id) {
+        clearActiveRun()
+        setActiveRun(null)
+      }
+      if (promotedConversationIdRef.current === response.conversation_id) {
+        promotedConversationIdRef.current = null
+      }
+      setIsSending(false)
+    }
+
+    if (!routeConversationId) {
+      if (hasMessages || isSending || Boolean(activeStreamAbortRef.current)) {
+        logChatRoute('route-effect:preserve-root-pending-session', {
+          currentPath: location.pathname,
+          conversationId,
+          hasMessages,
+          isSending,
+          activeRunConversationId: activeRun?.conversationId,
+          promotedConversationId: promotedConversationIdRef.current,
+          hasActiveAbortController: Boolean(activeStreamAbortRef.current),
+        })
+        return
+      }
+
+      logChatRoute('route-effect:new-chat-branch', {
+        currentPath: location.pathname,
+        conversationId,
+        hasMessages,
+        isSending,
+        activeRunConversationId: activeRun?.conversationId,
+      })
+      activeStreamAbortRef.current?.abort()
+      activeStreamAbortRef.current = null
+      setConversationId(undefined)
+      setConversationTitle('New chat')
+      setMessages([])
+      setError(undefined)
+      setLastSubmittedPrompt('')
+      setIsSending(false)
+      return
+    }
+
+    if (
+      (
+        promotedConversationIdRef.current === routeConversationId ||
+        activeRun?.conversationId === routeConversationId
+      ) &&
+      (hasMessages || isSending || Boolean(activeStreamAbortRef.current))
+    ) {
+      logChatRoute('route-effect:preserve-promoted-session', {
+        currentPath: location.pathname,
+        routeConversationId,
+        conversationId,
+        hasMessages,
+        isSending,
+        activeRunConversationId: activeRun?.conversationId,
+        promotedConversationId: promotedConversationIdRef.current,
+        hasActiveAbortController: Boolean(activeStreamAbortRef.current),
+      })
+      setConversationId(routeConversationId)
+      return
+    }
+
+    if (routeConversationId === conversationId) {
+      logChatRoute('route-effect:no-op-existing-session', {
+        currentPath: location.pathname,
+        routeConversationId,
+        conversationId,
+      })
+      return
+    }
+
+    logChatRoute('route-effect:fetch-session', {
+      currentPath: location.pathname,
+      routeConversationId,
+      conversationId,
+      hasMessages,
+      isSending,
+      activeRunConversationId: activeRun?.conversationId,
+      promotedConversationId: promotedConversationIdRef.current,
+    })
+    activeStreamAbortRef.current?.abort()
+    activeStreamAbortRef.current = null
+    setIsSending(false)
+    void loadSelectedConversation(routeConversationId)
+  }, [activeRun?.conversationId, conversationId, hasMessages, isSending, location.pathname, routeConversationId])
+
+  async function reconnectToActiveRun(
+    runId: string,
+    targetConversationId: string,
+    baseMessages: TranscriptMessage[],
+  ) {
+    activeStreamAbortRef.current?.abort()
+    const abortController = new AbortController()
+    activeStreamAbortRef.current = abortController
+    const pendingAssistant: TranscriptMessage = {
+      id: runId,
+      role: 'assistant',
+      content: '',
+      trace: [],
+    }
+
+    setMessages((currentMessages) => {
+      const source = currentMessages.length > 0 ? currentMessages : baseMessages
+      return source.some((message) => message.id === runId)
+        ? source
+        : [...source, pendingAssistant]
+    })
+    setIsSending(true)
+
+    try {
+      await reconnectChatRun(runId, 0, {
+        onStatus: (payload) => {
+          const startedConversationId =
+            typeof payload.conversation_id === 'string' ? payload.conversation_id : targetConversationId
+          setConversationId(startedConversationId)
+          rememberActiveRun(runId, startedConversationId)
+          setActiveRun({ runId, conversationId: startedConversationId })
+        },
+        onTrace: (event) => {
+          logStreamEvent(event)
+          setMessages((currentMessages) =>
+            currentMessages.map((message) =>
+              message.id === runId
+                ? {
+                    ...message,
+                    content: updateAssistantContent(message.content, event),
+                    trace: applyTraceEvent(message.trace ?? [], event),
+                  }
+                : message,
+            ),
+          )
+        },
+        onFinal: (finalResponse) => {
+          setConversationId(finalResponse.conversation_id)
+          setMessages((currentMessages) =>
+            currentMessages.map((message) =>
+              message.id === runId
+                ? {
+                    id: finalResponse.run_id,
+                    role: 'assistant',
+                    content: finalResponse.answer,
+                    trace: mergeFinalTrace(message.trace ?? [], finalResponse.trace),
+                    metrics: finalResponse.metrics,
+                  }
+                : message,
+            ),
+          )
+          clearActiveRun()
+          setActiveRun(null)
+          void loadConversationSummaries(finalResponse.conversation_id)
+        },
+      }, abortController.signal)
+    } catch (requestError) {
+      if (requestError instanceof DOMException && requestError.name === 'AbortError') {
+        return
+      }
+      setMessages((currentMessages) =>
+        currentMessages.filter((message) => message.id !== runId),
+      )
+      setError(requestError instanceof Error ? requestError.message : 'Unknown request failure.')
+    } finally {
+      if (activeStreamAbortRef.current === abortController) {
+        activeStreamAbortRef.current = null
+      }
+      if (routeConversationId === targetConversationId) {
+        setIsSending(false)
+      }
+    }
+  }
 
   async function handleAddAttachments(files: FileList | null) {
     if (!files?.length) {
@@ -262,15 +525,43 @@ export function ChatPage() {
     setAttachments([])
     setError(undefined)
     setIsSending(true)
+    logChatRoute('submit:start', {
+      currentPath: location.pathname,
+      conversationId,
+      routeConversationId,
+      trimmedDraft,
+      existingMessageCount: messages.length,
+    })
+    const abortController = new AbortController()
 
     try {
+      activeStreamAbortRef.current?.abort()
+      activeStreamAbortRef.current = abortController
       const response = await streamChatMessage(trimmedDraft, conversationId, researchMode, attachments, {
         onStatus: (payload) => {
           console.log('%c[stream] status', 'color:#22c55e;font-weight:bold', payload)
           const startedConversationId =
             typeof payload.conversation_id === 'string' ? payload.conversation_id : undefined
+          const startedRunId = typeof payload.run_id === 'string' ? payload.run_id : undefined
+          logChatRoute('stream-status', {
+            currentPath: location.pathname,
+            startedConversationId,
+            startedRunId,
+            payload,
+          })
           if (startedConversationId) {
+            promotedConversationIdRef.current = startedConversationId
             setConversationId(startedConversationId)
+            if (startedRunId) {
+              rememberActiveRun(startedRunId, startedConversationId)
+              setActiveRun({ runId: startedRunId, conversationId: startedConversationId })
+            }
+            upsertSessionSummary(
+              startedConversationId,
+              deriveConversationTitle(trimmedDraft),
+              trimmedDraft,
+            )
+            navigate(`/chat/${startedConversationId}`, { replace: true })
             void loadConversationSummaries(startedConversationId)
           }
         },
@@ -290,6 +581,11 @@ export function ChatPage() {
         },
         onFinal: (finalResponse) => {
           console.log('%c[stream] final', 'color:#a855f7;font-weight:bold', finalResponse)
+          logChatRoute('stream-final', {
+            currentPath: location.pathname,
+            conversationId: finalResponse.conversation_id,
+            runId: finalResponse.run_id,
+          })
           setConversationId(finalResponse.conversation_id)
           setMessages((currentMessages) =>
             currentMessages.map((message) =>
@@ -304,17 +600,48 @@ export function ChatPage() {
                 : message,
             ),
           )
+          clearActiveRun()
+          setActiveRun(null)
           void loadConversationSummaries(finalResponse.conversation_id)
         },
-      })
+      }, abortController.signal)
       setConversationId(response.conversation_id)
     } catch (requestError) {
+      if (requestError instanceof DOMException && requestError.name === 'AbortError') {
+        logChatRoute('submit:aborted', {
+          currentPath: location.pathname,
+          conversationId,
+          routeConversationId,
+          activeRunConversationId: activeRun?.conversationId,
+          promotedConversationId: promotedConversationIdRef.current,
+        })
+        return
+      }
+      logChatRoute('submit:error', {
+        currentPath: location.pathname,
+        message: requestError instanceof Error ? requestError.message : 'Unknown request failure.',
+      })
       setMessages((currentMessages) =>
         currentMessages.filter((message) => message.id !== pendingAssistantId),
       )
+      clearActiveRun()
+      setActiveRun(null)
       setError(requestError instanceof Error ? requestError.message : 'Unknown request failure.')
     } finally {
+      if (activeStreamAbortRef.current === abortController) {
+        activeStreamAbortRef.current = null
+      }
       setIsSending(false)
+      logChatRoute('submit:finally', {
+        currentPath: location.pathname,
+        conversationId,
+        routeConversationId,
+        hasMessages,
+        isSending,
+        activeRunConversationId: activeRun?.conversationId,
+        promotedConversationId: promotedConversationIdRef.current,
+        hasActiveAbortController: activeStreamAbortRef.current === abortController,
+      })
     }
   }
 
@@ -322,7 +649,8 @@ export function ChatPage() {
     <div className="grid h-screen w-full grid-cols-1 gap-6 overflow-hidden px-4 sm:px-6 lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-0 lg:px-0">
       <aside className="hidden border-r border-stone-200/80 bg-white/72 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden">
         <SidebarNav
-          activeConversationId={conversationId}
+          activeConversationId={routeConversationId ?? conversationId}
+          activeRunConversationId={activeRun?.conversationId}
           conversations={sessions}
           isLoading={isLoadingSessions}
           onNewChat={handleNewChat}
@@ -418,14 +746,45 @@ export function ChatPage() {
   )
 }
 
+function readActiveRun(): { runId: string; conversationId: string } | null {
+  const rawValue = window.localStorage.getItem(ACTIVE_RUN_STORAGE_KEY)
+  if (!rawValue) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as { runId?: string; conversationId?: string }
+    if (typeof parsed.runId === 'string' && typeof parsed.conversationId === 'string') {
+      return { runId: parsed.runId, conversationId: parsed.conversationId }
+    }
+  } catch {
+    return null
+  }
+
+  return null
+}
+
+function rememberActiveRun(runId: string, conversationId: string) {
+  window.localStorage.setItem(
+    ACTIVE_RUN_STORAGE_KEY,
+    JSON.stringify({ runId, conversationId }),
+  )
+}
+
+function clearActiveRun() {
+  window.localStorage.removeItem(ACTIVE_RUN_STORAGE_KEY)
+}
+
 const SidebarNav = memo(function SidebarNav({
   activeConversationId,
+  activeRunConversationId,
   conversations,
   isLoading,
   onNewChat,
   onOpenConversation,
 }: {
   activeConversationId?: string
+  activeRunConversationId?: string
   conversations: ConversationSummary[]
   isLoading: boolean
   onNewChat: () => void
@@ -485,8 +844,11 @@ const SidebarNav = memo(function SidebarNav({
                         <div className="truncate text-sm">{conversation.title}</div>
                         <div className="truncate text-xs text-stone-400">{conversation.preview}</div>
                       </div>
-                      <div className="ml-3 shrink-0 text-xs text-stone-400">
-                        {formatRelativeTime(conversation.last_message_at)}
+                      <div className="ml-3 flex shrink-0 items-center gap-2 text-xs text-stone-400">
+                        {activeRunConversationId === conversation.conversation_id ? (
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                        ) : null}
+                        <span>{formatRelativeTime(conversation.last_message_at)}</span>
                       </div>
                     </button>
                   ))
@@ -1035,7 +1397,7 @@ function MarkdownReport({ content }: { content: string }) {
   const normalizedContent = normalizeReportMarkdown(content)
 
   return (
-    <div className="prose prose-sm max-w-none text-stone-900 prose-headings:mb-3 prose-headings:font-semibold prose-headings:text-stone-950 prose-h2:mt-8 prose-h2:text-2xl prose-h3:mt-6 prose-h3:text-lg prose-p:my-3 prose-p:leading-7 prose-li:my-1 prose-li:leading-7 prose-strong:text-stone-950 prose-code:rounded prose-code:bg-stone-100 prose-code:px-1 prose-code:py-0.5 prose-pre:rounded-2xl prose-pre:bg-stone-950 prose-pre:text-stone-50 prose-ul:my-3 prose-ol:my-3">
+    <div className="prose prose-sm max-w-none break-words text-stone-900 [overflow-wrap:anywhere] prose-headings:mb-3 prose-headings:font-semibold prose-headings:text-stone-950 prose-h2:mt-8 prose-h2:text-2xl prose-h3:mt-6 prose-h3:text-lg prose-p:my-3 prose-p:leading-7 prose-li:my-1 prose-li:leading-7 prose-strong:text-stone-950 prose-code:rounded prose-code:bg-stone-100 prose-code:px-1 prose-code:py-0.5 prose-pre:overflow-x-auto prose-pre:rounded-2xl prose-pre:bg-stone-950 prose-pre:text-stone-50 prose-ul:my-3 prose-ol:my-3">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{normalizedContent}</ReactMarkdown>
     </div>
   )
@@ -1529,19 +1891,20 @@ function isToolTraceType(type: string): boolean {
   return type === 'tool' || type === 'tool_delta' || type === 'tool_result' || type === 'tool_error'
 }
 
-function updateAssistantContent(content: string, event: ChatTraceEvent): string {
+export function updateAssistantContent(content: string, event: ChatTraceEvent): string {
   if (event.type === 'final') {
     // onFinal will overwrite with the clean full answer; this handles the non-streaming path
     return event.content
   }
 
   if (event.type === 'assistant' || event.type === 'assistant_delta') {
-    const normalizedContent = normalizeStructuredPayloadText(
-      unwrapStructuredToolContent(event.content),
-    ).trim()
+    const normalizedContent = unwrapStructuredToolContent(event.content)
+      .replace(/^\s*\d+\t/, '')
+      .replace(/(?:\r?\n)\s*\d+\t/g, '\n')
+    const trimmedContent = normalizedContent.trim()
     // Accumulate plain-text content (not JSON tool-call blocks) so the answer
     // streams progressively in MessageBody before onFinal fires.
-    if (normalizedContent && !normalizedContent.startsWith('{') && !normalizedContent.startsWith('[')) {
+    if (trimmedContent && !trimmedContent.startsWith('{') && !trimmedContent.startsWith('[')) {
       return content + normalizedContent
     }
   }

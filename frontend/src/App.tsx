@@ -29,7 +29,7 @@ function App() {
 
 function AppShell() {
   const location = useLocation()
-  const isChatRoute = location.pathname === '/'
+  const isChatRoute = location.pathname === '/' || location.pathname.startsWith('/chat/')
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(249,249,247,0.96)_42%,_rgba(241,241,238,0.98)_100%)] text-foreground">
@@ -74,10 +74,13 @@ function AppShell() {
 
         <main className="flex-1">
           <Suspense fallback={<RouteSkeleton />}>
-            <Routes>
-              <Route path="/" element={<ChatPage />} />
-              <Route path="/admin" element={<AdminPage />} />
-            </Routes>
+            {isChatRoute ? (
+              <ChatPage />
+            ) : (
+              <Routes>
+                <Route path="/admin" element={<AdminPage />} />
+              </Routes>
+            )}
           </Suspense>
         </main>
       </div>

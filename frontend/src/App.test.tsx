@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import App from '@/App'
+import { updateAssistantContent } from '@/pages/chat-page'
 
 afterEach(() => {
   cleanup()
@@ -493,6 +494,26 @@ describe('App chat flow', () => {
     expect(await screen.findByRole('heading', { name: 'Executive Summary' })).toBeVisible()
     expect(await screen.findByRole('heading', { name: 'Key Facts and Ground Truth' })).toBeVisible()
     expect(await screen.findByRole('heading', { name: 'World Series titles' })).toBeVisible()
+  })
+
+  it('preserves whitespace when assistant chunks stream in', () => {
+    const firstChunk = updateAssistantContent('', {
+      id: 'chunk-1',
+      type: 'assistant',
+      title: 'Agent note',
+      content: 'Executive Summary\n\nFusion has not ',
+      metadata: {},
+    })
+
+    const fullContent = updateAssistantContent(firstChunk, {
+      id: 'chunk-1',
+      type: 'assistant_delta',
+      title: 'Agent note',
+      content: 'yet reached commercial scale.',
+      metadata: {},
+    })
+
+    expect(fullContent).toBe('Executive Summary\n\nFusion has not yet reached commercial scale.')
   })
 })
 

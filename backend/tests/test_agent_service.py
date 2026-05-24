@@ -36,6 +36,8 @@ def test_analyst_system_prompt_requires_verified_citations_and_osir_format() -> 
     assert "proceed directly instead of asking unnecessary clarifying questions" in ANALYST_SYSTEM_PROMPT
     assert "choose reasonable default scope" in ANALYST_SYSTEM_PROMPT
     assert 'If the user gives a short follow-up like "general"' in ANALYST_SYSTEM_PROMPT
+    assert "reuse that existing context first instead of searching again" in ANALYST_SYSTEM_PROMPT
+    assert "Do not perform a fresh web search for follow-up requests" in ANALYST_SYSTEM_PROMPT
     assert "Before drafting the final answer, verify every citation" in ANALYST_SYSTEM_PROMPT
     assert "Write the final response in Markdown." in ANALYST_SYSTEM_PROMPT
     assert "Use headings, bullet lists, numbered lists, and tables" in ANALYST_SYSTEM_PROMPT
@@ -49,6 +51,7 @@ def test_build_system_prompt_uses_light_research_constraints() -> None:
     prompt = build_system_prompt("light")
 
     assert "finish in under 1 minute" in prompt
+    assert "skipping redundant searches on follow-up turns" in prompt
     assert LIGHT_RESEARCH_ADDENDUM in prompt
     assert STANDARD_RESEARCH_ADDENDUM not in prompt
 

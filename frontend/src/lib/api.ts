@@ -20,6 +20,7 @@ export type ChatAttachment = {
 
 export type ChatTraceEvent = {
   id: string
+  sequence?: number | null
   type: string
   title: string
   content: string
@@ -80,6 +81,12 @@ export type ConversationDetailResponse = {
   conversation_id: string
   title: string
   messages: ConversationMessage[]
+  active_run?: {
+    run_id: string
+    conversation_id: string
+    status: string
+    error_message?: string | null
+  } | null
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1'
@@ -111,7 +118,7 @@ export async function sendChatMessage(
 }
 
 type StreamChatCallbacks = {
-  onStatus?: (payload: Record<string, string>) => void
+  onStatus?: (payload: Record<string, unknown>) => void
   onTrace?: (event: ChatTraceEvent) => void
   onFinal?: (response: ChatResponse) => void
 }
@@ -122,12 +129,14 @@ export async function streamChatMessage(
   researchMode: ResearchMode,
   attachments: ChatAttachment[],
   callbacks: StreamChatCallbacks,
+  signal?: AbortSignal,
 ): Promise<ChatResponse> {
   const response = await fetch(`${API_BASE_URL}/chat/stream`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
+    signal,
     body: JSON.stringify({
       message,
       conversation_id: conversationId,
@@ -140,38 +149,69 @@ export async function streamChatMessage(
     throw new Error('The agent stream request failed.')
   }
 
-  const reader = response.body.getReader()
+  return consumeEventStream(response.body, callbacks, signal)
+}
+
+export async function reconnectChatRun(
+  runId: string,
+  afterSequence: number,
+  callbacks: StreamChatCallbacks,
+  signal?: AbortSignal,
+): Promise<ChatResponse> {
+  const response = await fetch(`${API_BASE_URL}/chat/stream/${runId}?after_sequence=${afterSequence}`, { signal })
+
+  if (!response.ok || !response.body) {
+    throw new Error('The agent reconnection request failed.')
+  }
+
+  return consumeEventStream(response.body, callbacks, signal)
+}
+
+async function consumeEventStream(
+  body: ReadableStream<Uint8Array>,
+  callbacks: StreamChatCallbacks,
+  signal?: AbortSignal,
+): Promise<ChatResponse> {
+  const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
   let finalResponse: ChatResponse | undefined
 
-  while (true) {
-    const { value, done } = await reader.read()
-    if (done) {
-      break
-    }
-
-    buffer += decoder.decode(value, { stream: true })
-    const parts = buffer.split('\n\n')
-    buffer = parts.pop() ?? ''
-
-    for (const part of parts) {
-      const parsed = parseSseEvent(part)
-      if (!parsed) {
-        continue
+  try {
+    while (true) {
+      if (signal?.aborted) {
+        throw new DOMException('The operation was aborted.', 'AbortError')
       }
 
-      if (parsed.event === 'status') {
-        callbacks.onStatus?.(parsed.data as Record<string, string>)
-      } else if (parsed.event === 'trace') {
-        callbacks.onTrace?.(parsed.data as ChatTraceEvent)
-      } else if (parsed.event === 'final') {
-        finalResponse = parsed.data as ChatResponse
-        callbacks.onFinal?.(finalResponse)
-      } else if (parsed.event === 'error') {
-        throw new Error(String((parsed.data as { message?: string }).message ?? 'Unknown stream error.'))
+      const { value, done } = await reader.read()
+      if (done) {
+        break
+      }
+
+      buffer += decoder.decode(value, { stream: true })
+      const parts = buffer.split('\n\n')
+      buffer = parts.pop() ?? ''
+
+      for (const part of parts) {
+        const parsed = parseSseEvent(part)
+        if (!parsed) {
+          continue
+        }
+
+        if (parsed.event === 'status') {
+          callbacks.onStatus?.(parsed.data as Record<string, unknown>)
+        } else if (parsed.event === 'trace') {
+          callbacks.onTrace?.(parsed.data as ChatTraceEvent)
+        } else if (parsed.event === 'final') {
+          finalResponse = parsed.data as ChatResponse
+          callbacks.onFinal?.(finalResponse)
+        } else if (parsed.event === 'error') {
+          throw new Error(String((parsed.data as { message?: string }).message ?? 'Unknown stream error.'))
+        }
       }
     }
+  } finally {
+    await reader.cancel().catch(() => undefined)
   }
 
   if (!finalResponse) {
