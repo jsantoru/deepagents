@@ -4,17 +4,17 @@ import {
   ArrowUp,
   Bot,
   ChartColumnBig,
+  ChevronDown,
   Clock3,
   Coins,
-  ExternalLink,
   FolderOpen,
   Globe,
   LibraryBig,
   LoaderCircle,
   MessageSquarePlus,
   Mic,
-  PanelsTopLeft,
   Plus,
+  UserRound,
   ScrollText,
   Search,
   Sigma,
@@ -266,6 +266,7 @@ export function ChatPage() {
     try {
       const response = await streamChatMessage(trimmedDraft, conversationId, researchMode, attachments, {
         onStatus: (payload) => {
+          console.log('%c[stream] status', 'color:#22c55e;font-weight:bold', payload)
           const startedConversationId =
             typeof payload.conversation_id === 'string' ? payload.conversation_id : undefined
           if (startedConversationId) {
@@ -288,6 +289,7 @@ export function ChatPage() {
           )
         },
         onFinal: (finalResponse) => {
+          console.log('%c[stream] final', 'color:#a855f7;font-weight:bold', finalResponse)
           setConversationId(finalResponse.conversation_id)
           setMessages((currentMessages) =>
             currentMessages.map((message) =>
@@ -429,6 +431,8 @@ const SidebarNav = memo(function SidebarNav({
   onNewChat: () => void
   onOpenConversation: (conversationId: string) => void
 }) {
+  const [isProjectExpanded, setIsProjectExpanded] = useState(true)
+
   return (
     <div className="flex h-full min-h-0 flex-col px-4 py-5">
       <div className="space-y-2">
@@ -440,9 +444,6 @@ const SidebarNav = memo(function SidebarNav({
           <MessageSquarePlus className="h-4 w-4 text-stone-500" />
           <span>New chat</span>
         </button>
-        <SidebarUtility icon={Search} label="Search" />
-        <SidebarUtility icon={PanelsTopLeft} label="Saved briefs" />
-        <SidebarUtility icon={Clock3} label="Automations" />
         <SidebarUtility icon={ChartColumnBig} label="Admin dashboard" to="/admin" />
       </div>
 
@@ -450,45 +451,62 @@ const SidebarNav = memo(function SidebarNav({
         <div className="mb-4 px-3 text-xs font-medium text-stone-400">Projects</div>
         <div className="space-y-5">
           <div>
-            <div className="mb-2 flex items-center gap-2 px-3 text-sm text-stone-700">
+            <button
+              type="button"
+              className="mb-1 flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-sm text-stone-700 transition hover:bg-stone-100"
+              onClick={() => setIsProjectExpanded((v) => !v)}
+            >
               <FolderOpen className="h-4 w-4 text-stone-400" />
-              <span>deepagents</span>
-            </div>
-            <div className="space-y-1">
-              {isLoading ? (
-                <div className="px-3 py-2 text-sm text-stone-400">Loading sessions...</div>
-              ) : conversations.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-stone-400">No sessions yet</div>
-              ) : (
-                conversations.map((conversation) => (
-                  <button
-                    key={conversation.conversation_id}
-                    type="button"
-                    className={[
-                      'flex w-full items-center justify-between rounded-2xl px-3 py-2 text-left transition',
-                      activeConversationId === conversation.conversation_id
-                        ? 'bg-stone-100 text-stone-950'
-                        : 'text-stone-700 hover:bg-stone-50',
-                    ].join(' ')}
-                    onClick={() => onOpenConversation(conversation.conversation_id)}
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-sm">{conversation.title}</div>
-                      <div className="truncate text-xs text-stone-400">{conversation.preview}</div>
-                    </div>
-                    <div className="ml-3 shrink-0 text-xs text-stone-400">
-                      {formatRelativeTime(conversation.last_message_at)}
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
+              <span className="flex-1 text-left">default</span>
+              <ChevronDown
+                className={['h-3.5 w-3.5 text-stone-400 transition-transform', isProjectExpanded ? '' : '-rotate-90'].join(' ')}
+              />
+            </button>
+            {isProjectExpanded && (
+              <div className="space-y-1 border-l border-stone-200 ml-5 pl-2">
+                {isLoading && conversations.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-stone-400">Loading sessions...</div>
+                ) : conversations.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-stone-400">No sessions yet</div>
+                ) : (
+                  conversations.map((conversation) => (
+                    <button
+                      key={conversation.conversation_id}
+                      type="button"
+                      className={[
+                        'flex w-full items-center justify-between rounded-2xl px-3 py-2 text-left transition',
+                        activeConversationId === conversation.conversation_id
+                          ? 'bg-stone-100 text-stone-950'
+                          : 'text-stone-700 hover:bg-stone-50',
+                      ].join(' ')}
+                      onClick={() => onOpenConversation(conversation.conversation_id)}
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm">{conversation.title}</div>
+                        <div className="truncate text-xs text-stone-400">{conversation.preview}</div>
+                      </div>
+                      <div className="ml-3 shrink-0 text-xs text-stone-400">
+                        {formatRelativeTime(conversation.last_message_at)}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="border-t border-stone-200 px-3 py-4 text-xs text-stone-400">
-        Session history
+      <div className="border-t border-stone-200 px-3 py-3">
+        <div className="flex items-center gap-3 rounded-2xl px-2 py-2 text-stone-700 transition hover:bg-stone-100 cursor-pointer">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-stone-200 text-stone-500">
+            <UserRound className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium">User</div>
+            <div className="truncate text-xs text-stone-400">Signed in</div>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -576,7 +594,7 @@ function PromptComposer({
 
   return (
     <form className="space-y-3" onSubmit={onSubmit}>
-      <div className="overflow-hidden rounded-[30px] border border-stone-300 bg-white shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
+      <div className="overflow-hidden rounded-[30px] border border-stone-300 bg-white">
         <input
           ref={fileInputRef}
           hidden
@@ -692,7 +710,7 @@ function PromptComposer({
         </div>
       </div>
 
-      <div className="rounded-[0_0_26px_26px] bg-stone-100/95 px-5 py-3 text-sm text-stone-500 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+      <div className="px-5 py-3 text-sm text-stone-500">
         <div className="flex flex-wrap items-center gap-5">
           {chromeItems.map(({ icon: Icon, label }) => (
             <div key={label} className="inline-flex items-center gap-2">
@@ -889,11 +907,11 @@ function TraceTimeline({ trace, isFinal }: { trace: ChatTraceEvent[]; isFinal?: 
   return (
     <div className="mt-5 space-y-3 pt-1">
       {orderedTrace.map((event, index) => {
-        const Icon = getTraceIcon(event.type)
         const display = formatTraceEvent(event)
         if (!display) {
           return null
         }
+        const Icon = getTraceIcon(event, display)
         if (isFinal && display.animatePulse) {
           return null
         }
@@ -913,7 +931,11 @@ function TraceTimeline({ trace, isFinal }: { trace: ChatTraceEvent[]; isFinal?: 
         return (
           <div
             key={`${event.type}-${index}-${event.title}`}
-            className="rounded-3xl border border-current/10 bg-black/3 px-4 py-4"
+            className={
+              display.title === 'Progress update'
+                ? 'rounded-2xl border border-current/10 bg-stone-100/70 px-4 py-3'
+                : 'border-b border-current/10 pb-3'
+            }
           >
             {display.title ? (
               <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-current/60">
@@ -922,11 +944,12 @@ function TraceTimeline({ trace, isFinal }: { trace: ChatTraceEvent[]; isFinal?: 
               </div>
             ) : null}
             {display.summary ? (
-              <TraceSummary
-                animatePulse={display.animatePulse}
-                event={event}
-                summary={display.summary}
-              />
+              <p className="whitespace-pre-wrap text-sm leading-6">
+                {display.summary}
+                {display.results.length > 0 ? (
+                  <span className="text-current/50"> · {display.results.length} source{display.results.length === 1 ? '' : 's'}</span>
+                ) : null}
+              </p>
             ) : null}
             {display.bullets.length ? (
               <div className="mt-3 space-y-2">
@@ -941,16 +964,23 @@ function TraceTimeline({ trace, isFinal }: { trace: ChatTraceEvent[]; isFinal?: 
               </div>
             ) : null}
             {display.results.length ? (
-              <details className="mt-3">
-                <summary className="cursor-pointer list-none text-xs text-current/50 hover:text-current/70">
-                  {display.results.length} source{display.results.length === 1 ? '' : 's'}
-                </summary>
-                <div className="mt-2 space-y-2">
-                  {display.results.map((result) => (
-                    <SearchResultCard key={result.url} result={result} />
-                  ))}
-                </div>
-              </details>
+              <div className="mt-2 space-y-0.5">
+                {display.results.map((result) => {
+                  let domain = result.url
+                  try { domain = new URL(result.url).hostname.replace(/^www\./, '') } catch { /* keep raw url */ }
+                  return (
+                    <a
+                      key={result.url}
+                      href={result.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block truncate text-xs text-current/50 transition-colors hover:text-current/80 hover:underline"
+                    >
+                      {result.title ? `${result.title} · ${domain}` : domain}
+                    </a>
+                  )
+                })}
+              </div>
             ) : null}
             {!display.summary && !display.bullets.length && !display.links.length && !display.results.length ? (
               <TraceSummary event={event} summary={event.content} />
@@ -975,42 +1005,6 @@ function TraceTimeline({ trace, isFinal }: { trace: ChatTraceEvent[]; isFinal?: 
   )
 }
 
-function SearchResultCard({ result }: { result: SearchResult }) {
-  let domain = result.url
-  try {
-    domain = new URL(result.url).hostname.replace(/^www\./, '')
-  } catch {
-    // keep raw url as domain
-  }
-
-  return (
-    <details className="group rounded-2xl border border-current/10 bg-white/30">
-      <summary className="flex cursor-pointer list-none items-start gap-3 px-3 py-2.5">
-        <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-current/50" />
-        <div className="min-w-0 flex-1">
-          <a
-            href={result.url}
-            target="_blank"
-            rel="noreferrer"
-            className="block truncate text-sm font-medium leading-5 hover:underline"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {result.title || result.url}
-          </a>
-          <div className="truncate text-xs text-current/50">{domain}</div>
-          {result.snippet ? (
-            <p className="mt-1 line-clamp-2 text-xs leading-5 text-current/70">{result.snippet}</p>
-          ) : null}
-        </div>
-      </summary>
-      {result.content ? (
-        <div className="border-t border-current/10 px-3 py-3">
-          <p className="whitespace-pre-wrap text-xs leading-5 text-current/70">{result.content}</p>
-        </div>
-      ) : null}
-    </details>
-  )
-}
 
 function TraceSummary({
   animatePulse = false,
@@ -1047,13 +1041,10 @@ function MarkdownReport({ content }: { content: string }) {
   )
 }
 
-function getTraceIcon(type: string) {
-  switch (type) {
-    case 'final':
-      return Sparkles
-    default:
-      return Bot
-  }
+function getTraceIcon(event: ChatTraceEvent, display: TraceDisplay) {
+  if (event.type === 'final') return Sparkles
+  if (display.title === 'Progress update') return ScrollText
+  return Bot
 }
 
 type SearchResult = {
@@ -1116,21 +1107,19 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
         }
       }
     }
-    // Show the first chunk of any plain-text assistant message in the trace so reasoning
-    // notes surface. assistant_delta events (streaming continuations) are skipped here —
-    // they accumulate into message.content via updateAssistantContent instead.
+    // Show plain-text assistant messages (reasoning notes between tool calls) as a card.
+    // assistant_delta events are skipped — they accumulate into message.content instead.
     if (event.type === 'assistant') {
       const plainText = normalizedContent.trim()
       if (plainText && !plainText.startsWith('{') && !plainText.startsWith('[')) {
         return {
-          title: '',
-          summary: '',
+          title: 'Progress update',
+          summary: plainText,
           bullets: [],
           links: [],
           results: [],
           metadata: {},
           animatePulse: false,
-          inlineText: plainText.length > 300 ? `${plainText.slice(0, 300)}…` : plainText,
         }
       }
     }
@@ -1176,6 +1165,31 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
         }
       }
 
+      return {
+        title: '',
+        summary: query ? `Websearch: ${query}` : 'Websearch complete.',
+        bullets: [],
+        links: [],
+        results,
+        metadata: {},
+        animatePulse: false,
+      }
+    }
+
+    // tool — check if it contains completed search results (old persisted format)
+    if (event.type === 'tool' && isRecord(parsed) && Array.isArray(parsed.results)) {
+      const query = typeof parsed.query === 'string' ? parsed.query : undefined
+      const results: SearchResult[] = []
+      for (const r of parsed.results as unknown[]) {
+        if (isRecord(r) && typeof r.url === 'string') {
+          results.push({
+            title: typeof r.title === 'string' ? r.title : '',
+            url: r.url,
+            snippet: typeof r.content === 'string' ? r.content.slice(0, 200) : '',
+            content: typeof r.content === 'string' ? r.content : '',
+          })
+        }
+      }
       return {
         title: '',
         summary: query ? `Websearch: ${query}` : 'Websearch complete.',
@@ -1535,17 +1549,22 @@ function updateAssistantContent(content: string, event: ChatTraceEvent): string 
   return content
 }
 
+function formatLatency(ms: number): string {
+  const seconds = ms / 1000
+  if (seconds < 60) {
+    return `${seconds.toFixed(1)}s`
+  }
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = Math.round(seconds % 60)
+  return `${minutes}m ${remainingSeconds}s`
+}
+
 function RunMetrics({ metrics }: { metrics: ChatMetrics }) {
   const items = [
     {
-      icon: Sigma,
-      label: 'Tokens',
-      value: metrics.total_tokens.toLocaleString(),
-    },
-    {
       icon: Clock3,
-      label: 'Latency',
-      value: `${metrics.latency_ms} ms`,
+      label: 'Time Taken',
+      value: formatLatency(metrics.latency_ms),
     },
     {
       icon: Coins,
@@ -1553,14 +1572,24 @@ function RunMetrics({ metrics }: { metrics: ChatMetrics }) {
       value: `$${metrics.estimated_cost_usd.toFixed(5)}`,
     },
     {
+      icon: Sigma,
+      label: 'Tokens',
+      value: metrics.total_tokens.toLocaleString(),
+    },
+    {
       icon: Globe,
       label: 'Input',
       value: metrics.input_tokens.toLocaleString(),
     },
+    {
+      icon: Globe,
+      label: 'Output',
+      value: metrics.output_tokens.toLocaleString(),
+    },
   ]
 
   return (
-    <div className="mt-5 grid gap-2 border-t border-current/10 pt-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="mt-5 grid gap-2 border-t border-current/10 pt-4 sm:grid-cols-2 lg:grid-cols-5">
       {items.map(({ icon: Icon, label, value }) => (
         <div
           key={label}
