@@ -167,7 +167,7 @@ class DeepAgentsService(AgentService):
             agent.invoke,
             {"messages": input_messages},
         )
-        return _build_run_result(result, self.settings.agent_model)
+        return _build_run_result(result, self.settings.agent_model, history_len=len(input_messages))
 
     async def stream_chat(
         self,
@@ -182,6 +182,7 @@ class DeepAgentsService(AgentService):
         stream_input = {"messages": input_messages}
         last_values: dict | None = None
         active_message_ids: set[str] = set()
+        history_len = len(input_messages)
 
         async for part in agent.astream(
             stream_input,
@@ -236,7 +237,7 @@ class DeepAgentsService(AgentService):
         if last_values is None:
             raise RuntimeError("Agent stream completed without final state.")
 
-        return _build_run_result(last_values, self.settings.agent_model)
+        return _build_run_result(last_values, self.settings.agent_model, history_len=history_len)
 
     def _get_agent(self, research_mode: ResearchMode):
         agent = self._agents.get(research_mode)
@@ -307,28 +308,48 @@ def _normalize_message_content(content: object) -> str:
     return json.dumps(content, ensure_ascii=True, default=str)
 
 
-def _extract_trace_events(messages: Sequence[object]) -> list[ChatTraceEvent]:
+def _extract_trace_events(messages: Sequence[object], history_len: int = 1) -> list[ChatTraceEvent]:
     events: list[ChatTraceEvent] = []
 
     for index, message in enumerate(messages):
+        # Skip all messages that belong to the conversation history passed as input.
+        if index < history_len:
+            continue
+
         role = getattr(message, "type", None) or getattr(message, "role", None)
         name = getattr(message, "name", None)
         content = _normalize_message_content(getattr(message, "content", ""))
         if not content.strip():
             continue
 
-        if index == 0 and role == "human":
-            continue
-
         if role in {"tool", "tool_message"} or name:
             metadata: dict[str, str | int | float] = {}
             if name:
                 metadata["tool_name"] = str(name)
+            try:
+                output_dict = json.loads(content)
+                if isinstance(output_dict, dict):
+                    results = output_dict.get("results", [])
+                    if isinstance(results, list):
+                        metadata["result_links"] = json.dumps(
+                            [
+                                {
+                                    "title": r.get("title", ""),
+                                    "url": r.get("url", ""),
+                                    "snippet": (r.get("content") or "")[:200],
+                                    "content": r.get("content", ""),
+                                }
+                                for r in results[:5]
+                                if isinstance(r, dict) and r.get("url")
+                            ]
+                        )
+            except (json.JSONDecodeError, ValueError, AttributeError):
+                pass
             events.append(
                 ChatTraceEvent(
                     id=str(getattr(message, "id", None) or uuid4()),
-                    type="tool",
-                    title=f"Tool call: {name or 'tool'}",
+                    type="tool_result",
+                    title=f"Tool result: {name or 'tool'}",
                     content=content,
                     metadata=metadata,
                 )
@@ -360,7 +381,7 @@ def _extract_trace_events(messages: Sequence[object]) -> list[ChatTraceEvent]:
     return events
 
 
-def _build_run_result(result: dict, default_model_name: str) -> AgentRunResult:
+def _build_run_result(result: dict, default_model_name: str, history_len: int = 1) -> AgentRunResult:
     answer_message = result["messages"][-1]
     answer = _normalize_message_content(answer_message.content)
     usage = getattr(answer_message, "usage_metadata", {}) or {}
@@ -376,7 +397,7 @@ def _build_run_result(result: dict, default_model_name: str) -> AgentRunResult:
     )
     return AgentRunResult(
         answer=answer,
-        trace=_extract_trace_events(result["messages"]),
+        trace=_extract_trace_events(result["messages"], history_len=history_len),
         model_name=model_name,
         input_tokens=usage.get("input_tokens", 0),
         output_tokens=usage.get("output_tokens", 0),
