@@ -14,6 +14,7 @@ class BackgroundAgentRunner:
     def __init__(self) -> None:
         self._running_tasks: dict[str, asyncio.Task[None]] = {}
         self._subscriber_queues: dict[str, list[asyncio.Queue[tuple[str, object | None]]]] = defaultdict(list)
+        self._cancel_requested: set[str] = set()
         self._lock = asyncio.Lock()
 
     async def start_run(
@@ -24,6 +25,8 @@ class BackgroundAgentRunner:
         agent_service: AgentService,
     ) -> None:
         async with self._lock:
+            if run_id in self._cancel_requested:
+                return
             existing = self._running_tasks.get(run_id)
             if existing is not None and not existing.done():
                 return
@@ -37,6 +40,17 @@ class BackgroundAgentRunner:
         async with self._lock:
             self._subscriber_queues[run_id].append(queue)
         return queue
+
+    async def cancel_run(self, run_id: str) -> bool:
+        async with self._lock:
+            self._cancel_requested.add(run_id)
+            task = self._running_tasks.get(run_id)
+            if task is not None and not task.done():
+                task.cancel()
+                return True
+        await self._broadcast(run_id, "error", {"message": "Run cancelled."})
+        await self._broadcast(run_id, "done", None)
+        return True
 
     async def unsubscribe(self, run_id: str, queue: asyncio.Queue[tuple[str, object | None]]) -> None:
         async with self._lock:
@@ -96,6 +110,12 @@ class BackgroundAgentRunner:
                 final_response = await metrics_service.finalize_run(run_id, agent_result, latency_ms)
 
             await self._broadcast(run_id, "final", final_response)
+        except asyncio.CancelledError:
+            async with session_factory() as session:
+                metrics_service = MetricsService(session)
+                await metrics_service.mark_run_cancelled(run_id)
+            await self._broadcast(run_id, "error", {"message": "Run cancelled."})
+            raise
         except Exception as exc:
             async with session_factory() as session:
                 metrics_service = MetricsService(session)
@@ -105,6 +125,7 @@ class BackgroundAgentRunner:
             await self._broadcast(run_id, "done", None)
             async with self._lock:
                 self._running_tasks.pop(run_id, None)
+                self._cancel_requested.discard(run_id)
                 if not self._subscriber_queues.get(run_id):
                     self._subscriber_queues.pop(run_id, None)
 

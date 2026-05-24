@@ -369,6 +369,14 @@ class MetricsService:
         await self.session.commit()
         return run
 
+    async def mark_run_cancelled(self, run_id: str, error_message: str = "Run cancelled.") -> AgentRun:
+        run = await self._require_run(run_id)
+        run.status = "cancelled"
+        run.error_message = error_message
+        run.completed_at = datetime.now(timezone.utc)
+        await self.session.commit()
+        return run
+
     async def finalize_run(
         self,
         run_id: str,

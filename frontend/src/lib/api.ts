@@ -173,6 +173,18 @@ export async function reconnectChatRun(
   return consumeEventStream(response.body, callbacks, signal)
 }
 
+export async function cancelChatRun(runId: string): Promise<{ cancelled: boolean }> {
+  const response = await fetch(`${API_BASE_URL}/chat/stream/${runId}/cancel`, {
+    method: 'POST',
+  })
+
+  if (!response.ok) {
+    throw new Error('The run cancellation request failed.')
+  }
+
+  return (await response.json()) as { cancelled: boolean }
+}
+
 async function consumeEventStream(
   body: ReadableStream<Uint8Array>,
   callbacks: StreamChatCallbacks,

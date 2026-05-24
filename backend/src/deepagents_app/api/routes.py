@@ -119,6 +119,9 @@ async def reconnect_chat_stream(
         if current_run.status == "failed":
             yield _format_sse("error", {"message": current_run.error_message or "Run failed."})
             return
+        if current_run.status == "cancelled":
+            yield _format_sse("error", {"message": current_run.error_message or "Run cancelled."})
+            return
 
         queue = await runner.subscribe(current_run.id)
         try:
@@ -134,6 +137,9 @@ async def reconnect_chat_stream(
             if current_run.status == "failed":
                 yield _format_sse("error", {"message": current_run.error_message or "Run failed."})
                 return
+            if current_run.status == "cancelled":
+                yield _format_sse("error", {"message": current_run.error_message or "Run cancelled."})
+                return
             while True:
                 event_type, data = await queue.get()
                 if event_type == "done":
@@ -143,6 +149,23 @@ async def reconnect_chat_stream(
             await runner.unsubscribe(current_run.id, queue)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@api_router.post("/chat/stream/{run_id}/cancel", tags=["chat"])
+async def cancel_chat_stream(run_id: str) -> dict[str, bool]:
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        metrics_service = MetricsService(session)
+        run = await metrics_service.get_agent_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        if run.status not in ("pending", "running"):
+            return {"cancelled": False}
+        await metrics_service.mark_run_cancelled(run_id)
+
+    runner = get_background_runner()
+    cancelled = await runner.cancel_run(run_id)
+    return {"cancelled": cancelled}
 
 
 @api_router.get("/admin/overview", response_model=AdminOverviewResponse, tags=["admin"])

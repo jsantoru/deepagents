@@ -129,3 +129,31 @@
     @apply font-sans;
     }
 }
+
+@layer utilities {
+  .scrollbar-shell {
+    scrollbar-color: oklch(0.78 0 0) transparent;
+    scrollbar-width: thin;
+  }
+
+  .scrollbar-shell::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .scrollbar-shell::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-shell::-webkit-scrollbar-thumb {
+    background: oklch(0.82 0 0);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+
+  .scrollbar-shell::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.74 0 0);
+    background-clip: padding-box;
+  }
+}

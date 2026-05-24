@@ -1,4 +1,14 @@
-import { memo, useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+  type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import {
   AlertCircle,
   ArrowUp,
@@ -26,9 +36,9 @@ import remarkGfm from 'remark-gfm'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
+  cancelChatRun,
   type ChatMetrics,
   type ChatTraceEvent,
   type ChatAttachment,
@@ -111,6 +121,10 @@ const MAX_TEXT_ATTACHMENT_COUNT = 6
 const MAX_TEXT_ATTACHMENT_BYTES = 200_000
 const MAX_TOTAL_TEXT_ATTACHMENT_BYTES = 600_000
 const ACTIVE_RUN_STORAGE_KEY = 'deepagents.active-run'
+const SIDEBAR_WIDTH_STORAGE_KEY = 'deepagents.sidebar-width'
+const MIN_SIDEBAR_WIDTH = 300
+const MAX_SIDEBAR_WIDTH = 460
+const DEFAULT_SIDEBAR_WIDTH = 336
 
 const starterPrompts = [
   {
@@ -150,9 +164,12 @@ export function ChatPage() {
   const [lastSubmittedPrompt, setLastSubmittedPrompt] = useState('')
   const [researchMode, setResearchMode] = useState<ResearchMode>('standard')
   const [activeRun, setActiveRun] = useState<{ runId: string; conversationId: string } | null>(() => readActiveRun())
+  const [sidebarWidth, setSidebarWidth] = useState(() => readSidebarWidth())
+  const stopRequestedRef = useRef(false)
   const bottomAnchorRef = useRef<HTMLDivElement | null>(null)
   const activeStreamAbortRef = useRef<AbortController | null>(null)
   const promotedConversationIdRef = useRef<string | null>(null)
+  const sidebarResizeStateRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null)
 
   const hasMessages = messages.length > 0
   const isSessionOpen = Boolean(routeConversationId || conversationId)
@@ -162,6 +179,34 @@ export function ChatPage() {
     ? sessions.find((conversation) => conversation.conversation_id === activeConversationId)
     : undefined
   const conversationTitle = resolveConversationTitle(messages, activeSessionSummary?.title)
+
+  async function handleStopRun() {
+    if (!activeRun?.runId) {
+      activeStreamAbortRef.current?.abort()
+      activeStreamAbortRef.current = null
+      setIsSending(false)
+      return
+    }
+
+    stopRequestedRef.current = true
+    activeStreamAbortRef.current?.abort()
+    activeStreamAbortRef.current = null
+
+    try {
+      await cancelChatRun(activeRun.runId)
+    } catch (cancelError) {
+      setError(
+        cancelError instanceof Error ? cancelError.message : 'The run cancellation request failed.',
+      )
+      stopRequestedRef.current = false
+      return
+    }
+
+    clearActiveRun()
+    setActiveRun(null)
+    setIsSending(false)
+    void loadConversationSummaries()
+  }
 
   useEffect(() => {
     if (isComposerDocked && typeof bottomAnchorRef.current?.scrollIntoView === 'function') {
@@ -173,6 +218,44 @@ export function ChatPage() {
     return () => {
       activeStreamAbortRef.current?.abort()
       activeStreamAbortRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth))
+  }, [sidebarWidth])
+
+  useEffect(() => {
+    function handlePointerMove(event: PointerEvent) {
+      const resizeState = sidebarResizeStateRef.current
+      if (!resizeState) {
+        return
+      }
+
+      const nextWidth = clampSidebarWidth(
+        resizeState.startWidth + event.clientX - resizeState.startX,
+      )
+      setSidebarWidth(nextWidth)
+    }
+
+    function handlePointerUp(event: PointerEvent) {
+      if (sidebarResizeStateRef.current?.pointerId !== event.pointerId) {
+        return
+      }
+
+      sidebarResizeStateRef.current = null
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
     }
   }, [])
 
@@ -456,6 +539,16 @@ export function ChatPage() {
       }, abortController.signal)
     } catch (requestError) {
       if (requestError instanceof DOMException && requestError.name === 'AbortError') {
+        if (stopRequestedRef.current) {
+          stopRequestedRef.current = false
+          return
+        }
+        return
+      }
+      if (requestError instanceof Error && requestError.message === 'Run cancelled.') {
+        stopRequestedRef.current = false
+        clearActiveRun()
+        setActiveRun(null)
         return
       }
       setMessages((currentMessages) =>
@@ -607,6 +700,10 @@ export function ChatPage() {
       setConversationId(response.conversation_id)
     } catch (requestError) {
       if (requestError instanceof DOMException && requestError.name === 'AbortError') {
+        if (stopRequestedRef.current) {
+          stopRequestedRef.current = false
+          return
+        }
         logChatRoute('submit:aborted', {
           currentPath: location.pathname,
           conversationId,
@@ -614,6 +711,12 @@ export function ChatPage() {
           activeRunConversationId: activeRun?.conversationId,
           promotedConversationId: promotedConversationIdRef.current,
         })
+        return
+      }
+      if (requestError instanceof Error && requestError.message === 'Run cancelled.') {
+        stopRequestedRef.current = false
+        clearActiveRun()
+        setActiveRun(null)
         return
       }
       logChatRoute('submit:error', {
@@ -644,9 +747,31 @@ export function ChatPage() {
     }
   }
 
+  function handleSidebarResizeStart(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.pointerType === 'mouse' && event.button !== 0) {
+      return
+    }
+
+    sidebarResizeStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: sidebarWidth,
+    }
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const layoutStyle = {
+    '--sidebar-width': `${sidebarWidth}px`,
+  } as CSSProperties
+
   return (
-    <div className="grid h-screen w-full grid-cols-1 gap-6 overflow-hidden px-4 sm:px-6 lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-0 lg:px-0">
-      <aside className="hidden border-r border-stone-200/80 bg-white/72 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden">
+    <div
+      className="grid h-screen w-full grid-cols-1 gap-6 overflow-hidden px-4 sm:px-6 lg:grid-cols-[var(--sidebar-width)_minmax(0,1fr)] lg:gap-0 lg:px-0"
+      style={layoutStyle}
+    >
+      <aside className="relative hidden border-r border-stone-200/80 bg-white/72 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden">
         <SidebarNav
           activeConversationId={routeConversationId ?? conversationId}
           conversations={sessions}
@@ -654,30 +779,20 @@ export function ChatPage() {
           onNewChat={handleNewChat}
           onOpenConversation={handleOpenConversation}
         />
+        <button
+          type="button"
+          aria-label="Resize sidebar"
+          className="absolute top-0 right-[-6px] bottom-0 z-20 hidden w-3 cursor-col-resize lg:block"
+          onPointerDown={handleSidebarResizeStart}
+        >
+          <span className="absolute top-0 bottom-0 left-1/2 w-px -translate-x-1/2 bg-stone-200/70 transition-colors hover:bg-stone-300" />
+        </button>
       </aside>
 
-      <section className="flex h-screen min-h-0 flex-col overflow-hidden pb-4 pt-8 lg:px-8 lg:pt-6">
-        {isComposerDocked ? (
-          <header className="mb-6 flex items-center justify-between">
-            <div className="min-w-0">
-              <h2 className="truncate text-2xl font-semibold tracking-tight text-stone-950">
-                {conversationTitle}
-              </h2>
-              <p className="text-sm text-stone-500">deepagents</p>
-            </div>
-          </header>
-        ) : null}
-
-        <div
-          className={[
-            'min-h-0 transition-all duration-300',
-            isComposerDocked
-              ? 'flex-1 overflow-y-auto pb-8'
-              : 'flex flex-1 flex-col justify-center overflow-y-auto pb-16',
-          ].join(' ')}
-        >
-          {!isComposerDocked ? (
-            <section className="mx-auto w-full max-w-5xl">
+      <section className="relative h-screen min-h-0 overflow-hidden bg-[rgba(249,249,247,0.98)]">
+        {!isComposerDocked ? (
+          <div className="flex h-full min-h-0 flex-col justify-center pb-16">
+            <section className="mx-auto w-full max-w-5xl pt-8 lg:pt-6">
               <h1 className="mb-10 text-center text-4xl font-medium tracking-tight text-stone-900 sm:text-5xl">
                 What are we researching?
               </h1>
@@ -692,6 +807,7 @@ export function ChatPage() {
                 onChange={setDraft}
                 onModeChange={setResearchMode}
                 onRemoveAttachment={handleRemoveAttachment}
+                onStop={handleStopRun}
                 onSubmit={handleSubmit}
                 researchMode={researchMode}
               />
@@ -709,36 +825,48 @@ export function ChatPage() {
                 ))}
               </div>
             </section>
-          ) : (
-            <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6">
-              <ConversationMessages messages={messages} />
-              <div ref={bottomAnchorRef} />
-            </section>
-          )}
-        </div>
+          </div>
+        ) : (
+          <>
+            <header className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between bg-[rgba(249,249,247,0.98)] pb-4 pl-10 pt-8 lg:pt-6">
+              <div className="min-w-0">
+                <h2 className="truncate text-2xl font-semibold tracking-tight text-stone-950">
+                  {conversationTitle}
+                </h2>
+                <p className="text-sm text-stone-500">deepagents</p>
+              </div>
+            </header>
 
-        {isComposerDocked ? (
-          <div className="sticky bottom-0 z-20">
-            <div className="mx-auto w-full max-w-5xl rounded-[32px] bg-[linear-gradient(180deg,rgba(249,249,247,0),rgba(249,249,247,0.94)_24%,rgba(249,249,247,0.98)_100%)]">
-              <div className="pt-6">
-              <PromptComposer
-                draft={draft}
-                error={error}
-                isDocked
-                isSending={isSending}
-                attachments={attachments}
-                lastSubmittedPrompt={lastSubmittedPrompt}
-                onAddAttachments={handleAddAttachments}
-                onChange={setDraft}
-                onModeChange={setResearchMode}
-                onRemoveAttachment={handleRemoveAttachment}
-                onSubmit={handleSubmit}
-                researchMode={researchMode}
-              />
+            <div className="scrollbar-shell absolute inset-0 overflow-y-auto">
+              <section className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-0 pb-96 pt-32 lg:pt-28">
+                <ConversationMessages messages={messages} />
+                <div ref={bottomAnchorRef} />
+              </section>
+            </div>
+
+            <div className="absolute right-0 bottom-0 left-0 z-30 pb-4">
+              <div className="mx-auto w-full max-w-5xl pt-6">
+                <div className="rounded-[32px] bg-white">
+                  <PromptComposer
+                    draft={draft}
+                    error={error}
+                    isDocked
+                    isSending={isSending}
+                    attachments={attachments}
+                    lastSubmittedPrompt={lastSubmittedPrompt}
+                    onAddAttachments={handleAddAttachments}
+                    onChange={setDraft}
+                    onModeChange={setResearchMode}
+                    onRemoveAttachment={handleRemoveAttachment}
+                    onStop={handleStopRun}
+                    onSubmit={handleSubmit}
+                    researchMode={researchMode}
+                  />
+                </div>
               </div>
             </div>
-          </div>
-        ) : null}
+          </>
+        )}
       </section>
     </div>
   )
@@ -760,6 +888,24 @@ function readActiveRun(): { runId: string; conversationId: string } | null {
   }
 
   return null
+}
+
+function clampSidebarWidth(value: number): number {
+  return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, Math.round(value)))
+}
+
+function readSidebarWidth(): number {
+  const rawValue = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)
+  if (!rawValue) {
+    return DEFAULT_SIDEBAR_WIDTH
+  }
+
+  const parsedValue = Number(rawValue)
+  if (!Number.isFinite(parsedValue)) {
+    return DEFAULT_SIDEBAR_WIDTH
+  }
+
+  return clampSidebarWidth(parsedValue)
 }
 
 function rememberActiveRun(runId: string, conversationId: string) {
@@ -789,8 +935,8 @@ const SidebarNav = memo(function SidebarNav({
   const [isProjectExpanded, setIsProjectExpanded] = useState(true)
 
   return (
-    <div className="flex h-full min-h-0 flex-col px-4 py-5">
-      <div className="space-y-2">
+    <div className="flex h-full min-h-0 flex-col pl-2 pt-7">
+      <div className="space-y-2 pr-4">
         <button
           type="button"
           className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left text-sm text-stone-800 transition hover:bg-stone-100"
@@ -802,9 +948,9 @@ const SidebarNav = memo(function SidebarNav({
         <SidebarUtility icon={ChartColumnBig} label="Admin dashboard" to="/admin" />
       </div>
 
-      <div className="mt-10 min-h-0 flex-1 overflow-y-auto pr-1">
+      <div className="scrollbar-shell mt-10 min-h-0 flex-1 overflow-y-auto pr-1">
         <div className="mb-4 px-3 text-xs font-medium text-stone-400">Projects</div>
-        <div className="space-y-5">
+        <div className="space-y-5 pr-4">
           <div>
             <button
               type="button"
@@ -855,7 +1001,7 @@ const SidebarNav = memo(function SidebarNav({
         </div>
       </div>
 
-      <div className="border-t border-stone-200 px-3 py-3">
+      <div className="border-t border-stone-200 px-3 py-3 pr-4">
         <div className="flex items-center gap-3 rounded-2xl px-2 py-2 text-stone-700 transition hover:bg-stone-100 cursor-pointer">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-stone-200 text-stone-500">
             <UserRound className="h-4 w-4" />
@@ -913,6 +1059,7 @@ type PromptComposerProps = {
   onChange: (value: string) => void
   onModeChange: (mode: ResearchMode) => void
   onRemoveAttachment: (attachmentId: string) => void
+  onStop: () => void | Promise<void>
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   researchMode: ResearchMode
 }
@@ -928,6 +1075,7 @@ function PromptComposer({
   onChange,
   onModeChange,
   onRemoveAttachment,
+  onStop,
   onSubmit,
   researchMode,
 }: PromptComposerProps) {
@@ -1056,14 +1204,26 @@ function PromptComposer({
             >
               <Mic className="h-4 w-4" />
             </button>
-            <Button
-              aria-label={isSending ? 'Processing request' : 'Send prompt'}
-              className="h-12 w-12 rounded-full bg-stone-950 p-0 hover:bg-stone-800 disabled:bg-stone-950/90 disabled:opacity-100"
+            <button
+              aria-label={isSending ? 'Stop run' : 'Send prompt'}
+              className={
+                isSending
+                  ? 'inline-flex h-11 min-w-[88px] items-center justify-center gap-2 rounded-full bg-stone-950 px-4 text-sm font-medium text-white transition hover:bg-stone-800 disabled:cursor-default disabled:bg-stone-950/90 disabled:opacity-100'
+                  : 'inline-flex h-12 w-12 items-center justify-center rounded-full bg-stone-950 text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-950/90 disabled:opacity-100'
+              }
               disabled={!isSending && !draft.trim()}
-              type="submit"
+              type={isSending ? 'button' : 'submit'}
+              onClick={isSending ? () => void onStop() : undefined}
             >
-              {isSending ? <Square className="h-4 w-4 fill-current" /> : <ArrowUp className="h-5 w-5" />}
-            </Button>
+              {isSending ? (
+                <>
+                  <Square className="h-3.5 w-3.5 fill-current" />
+                  <span className="text-sm font-medium">Stop</span>
+                </>
+              ) : (
+                <ArrowUp className="h-5 w-5" />
+              )}
+            </button>
           </div>
         </div>
       </div>
@@ -1919,7 +2079,19 @@ export function updateAssistantContent(content: string, event: ChatTraceEvent): 
     // Accumulate plain-text content (not JSON tool-call blocks) so the answer
     // streams progressively in MessageBody before onFinal fires.
     if (trimmedContent && !trimmedContent.startsWith('{') && !trimmedContent.startsWith('[')) {
-      return content + normalizedContent
+      if (!content) {
+        return normalizedContent
+      }
+
+      const needsSeparator =
+        !/\s$/.test(content) &&
+        !/^\s/.test(normalizedContent) &&
+        !/[([{/:;-]$/.test(content) &&
+        !/^[)\]}:;,.!?-]/.test(normalizedContent)
+
+      return needsSeparator
+        ? `${content}\n\n${normalizedContent}`
+        : `${content}${normalizedContent}`
     }
   }
 
@@ -1974,6 +2146,11 @@ function RunMetrics({ metrics }: { metrics: ChatMetrics }) {
       icon: Globe,
       label: 'Output',
       value: metrics.output_tokens.toLocaleString(),
+    },
+    {
+      icon: Search,
+      label: 'Websearches',
+      value: metrics.search_calls.toLocaleString(),
     },
   ]
 
