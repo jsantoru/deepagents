@@ -140,7 +140,6 @@ export function ChatPage() {
     ? decodeURIComponent(location.pathname.slice('/chat/'.length))
     : undefined
   const [conversationId, setConversationId] = useState<string>()
-  const [conversationTitle, setConversationTitle] = useState('New chat')
   const [draft, setDraft] = useState('')
   const [attachments, setAttachments] = useState<PersistedAttachment[]>([])
   const [messages, setMessages] = useState<TranscriptMessage[]>([])
@@ -158,6 +157,11 @@ export function ChatPage() {
   const hasMessages = messages.length > 0
   const isSessionOpen = Boolean(routeConversationId || conversationId)
   const isComposerDocked = hasMessages || isSending || isSessionOpen
+  const activeConversationId = routeConversationId ?? conversationId
+  const activeSessionSummary = activeConversationId
+    ? sessions.find((conversation) => conversation.conversation_id === activeConversationId)
+    : undefined
+  const conversationTitle = resolveConversationTitle(messages, activeSessionSummary?.title)
 
   useEffect(() => {
     if (isComposerDocked && typeof bottomAnchorRef.current?.scrollIntoView === 'function') {
@@ -176,19 +180,23 @@ export function ChatPage() {
     void loadConversationSummaries()
   }, [])
 
-  async function loadConversationSummaries(selectedId?: string) {
+  useEffect(() => {
+    if (!sessions.some((conversation) => conversation.active_run)) {
+      return
+    }
+
+    const intervalId = window.setInterval(() => {
+      void loadConversationSummaries()
+    }, 3000)
+
+    return () => window.clearInterval(intervalId)
+  }, [sessions])
+
+  async function loadConversationSummaries() {
     setIsLoadingSessions(true)
     try {
       const response = await fetchConversationSummaries()
       setSessions(response.conversations)
-
-      const activeConversationId = selectedId ?? conversationId
-      const activeConversation = response.conversations.find(
-        (conversation) => conversation.conversation_id === activeConversationId,
-      )
-      if (activeConversation) {
-        setConversationTitle(activeConversation.title)
-      }
     } catch (historyError) {
       setError(
         historyError instanceof Error ? historyError.message : 'Unknown history loading failure.',
@@ -251,7 +259,6 @@ export function ChatPage() {
     activeStreamAbortRef.current?.abort()
     activeStreamAbortRef.current = null
     setConversationId(undefined)
-    setConversationTitle('New chat')
     setMessages([])
     setDraft('')
     setAttachments([])
@@ -276,7 +283,6 @@ export function ChatPage() {
         activeRunStatus: response.active_run?.status,
       })
       setConversationId(response.conversation_id)
-      setConversationTitle(response.title)
       const nextMessages = response.messages.map((message) => ({
         id: message.id,
         role: message.role,
@@ -333,7 +339,6 @@ export function ChatPage() {
       activeStreamAbortRef.current?.abort()
       activeStreamAbortRef.current = null
       setConversationId(undefined)
-      setConversationTitle('New chat')
       setMessages([])
       setError(undefined)
       setLastSubmittedPrompt('')
@@ -342,10 +347,7 @@ export function ChatPage() {
     }
 
     if (
-      (
-        promotedConversationIdRef.current === routeConversationId ||
-        activeRun?.conversationId === routeConversationId
-      ) &&
+      promotedConversationIdRef.current === routeConversationId &&
       (hasMessages || isSending || Boolean(activeStreamAbortRef.current))
     ) {
       logChatRoute('route-effect:preserve-promoted-session', {
@@ -354,11 +356,11 @@ export function ChatPage() {
         conversationId,
         hasMessages,
         isSending,
-        activeRunConversationId: activeRun?.conversationId,
         promotedConversationId: promotedConversationIdRef.current,
         hasActiveAbortController: Boolean(activeStreamAbortRef.current),
       })
       setConversationId(routeConversationId)
+      promotedConversationIdRef.current = null
       return
     }
 
@@ -449,7 +451,7 @@ export function ChatPage() {
           )
           clearActiveRun()
           setActiveRun(null)
-          void loadConversationSummaries(finalResponse.conversation_id)
+          void loadConversationSummaries()
         },
       }, abortController.signal)
     } catch (requestError) {
@@ -518,9 +520,6 @@ export function ChatPage() {
 
     setMessages((currentMessages) => [...currentMessages, optimisticMessage, pendingAssistant])
     setLastSubmittedPrompt(trimmedDraft)
-    if (!conversationId) {
-      setConversationTitle(deriveConversationTitle(trimmedDraft))
-    }
     setDraft('')
     setAttachments([])
     setError(undefined)
@@ -562,7 +561,7 @@ export function ChatPage() {
               trimmedDraft,
             )
             navigate(`/chat/${startedConversationId}`, { replace: true })
-            void loadConversationSummaries(startedConversationId)
+            void loadConversationSummaries()
           }
         },
         onTrace: (event) => {
@@ -602,7 +601,7 @@ export function ChatPage() {
           )
           clearActiveRun()
           setActiveRun(null)
-          void loadConversationSummaries(finalResponse.conversation_id)
+          void loadConversationSummaries()
         },
       }, abortController.signal)
       setConversationId(response.conversation_id)
@@ -650,7 +649,6 @@ export function ChatPage() {
       <aside className="hidden border-r border-stone-200/80 bg-white/72 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden">
         <SidebarNav
           activeConversationId={routeConversationId ?? conversationId}
-          activeRunConversationId={activeRun?.conversationId}
           conversations={sessions}
           isLoading={isLoadingSessions}
           onNewChat={handleNewChat}
@@ -777,14 +775,12 @@ function clearActiveRun() {
 
 const SidebarNav = memo(function SidebarNav({
   activeConversationId,
-  activeRunConversationId,
   conversations,
   isLoading,
   onNewChat,
   onOpenConversation,
 }: {
   activeConversationId?: string
-  activeRunConversationId?: string
   conversations: ConversationSummary[]
   isLoading: boolean
   onNewChat: () => void
@@ -845,7 +841,7 @@ const SidebarNav = memo(function SidebarNav({
                         <div className="truncate text-xs text-stone-400">{conversation.preview}</div>
                       </div>
                       <div className="ml-3 flex shrink-0 items-center gap-2 text-xs text-stone-400">
-                        {activeRunConversationId === conversation.conversation_id ? (
+                        {conversation.active_run ? (
                           <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                         ) : null}
                         <span>{formatRelativeTime(conversation.last_message_at)}</span>
@@ -1655,6 +1651,24 @@ function deriveConversationTitle(value: string): string {
   return `${normalized.slice(0, 45).trimEnd()}...`
 }
 
+function resolveConversationTitle(
+  messages: TranscriptMessage[],
+  fallbackTitle?: string,
+): string {
+  const firstUserMessage = messages.find(
+    (message) => message.role === 'user' && message.content.trim(),
+  )
+  if (firstUserMessage) {
+    return deriveConversationTitle(firstUserMessage.content)
+  }
+
+  if (fallbackTitle?.trim()) {
+    return fallbackTitle
+  }
+
+  return 'New chat'
+}
+
 function formatRelativeTime(value: string): string {
   const timestamp = new Date(value).getTime()
   const diffMs = timestamp - Date.now()
@@ -1922,17 +1936,29 @@ function formatLatency(ms: number): string {
   return `${minutes}m ${remainingSeconds}s`
 }
 
+function formatCost(estimatedCostUsd: number): string {
+  if (estimatedCostUsd >= 0.01) {
+    return `$${estimatedCostUsd.toFixed(2)}`
+  }
+
+  if (estimatedCostUsd >= 0.001) {
+    return `$${estimatedCostUsd.toFixed(4)}`
+  }
+
+  return `$${estimatedCostUsd.toFixed(5)}`
+}
+
 function RunMetrics({ metrics }: { metrics: ChatMetrics }) {
   const items = [
     {
       icon: Clock3,
-      label: 'Time Taken',
+      label: 'Time taken',
       value: formatLatency(metrics.latency_ms),
     },
     {
       icon: Coins,
       label: 'Est. cost',
-      value: `$${metrics.estimated_cost_usd.toFixed(5)}`,
+      value: formatCost(metrics.estimated_cost_usd),
     },
     {
       icon: Sigma,
@@ -1952,19 +1978,16 @@ function RunMetrics({ metrics }: { metrics: ChatMetrics }) {
   ]
 
   return (
-    <div className="mt-5 grid gap-2 border-t border-current/10 pt-4 sm:grid-cols-2 lg:grid-cols-5">
-      {items.map(({ icon: Icon, label, value }) => (
-        <div
-          key={label}
-          className="rounded-2xl border border-current/10 bg-black/3 px-3 py-3 text-xs uppercase tracking-[0.18em]"
-        >
-          <div className="mb-2 flex items-center gap-2 text-current/60">
-            <Icon className="h-3.5 w-3.5" />
-            {label}
+    <section className="mt-4 border-t border-current/8 pt-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-current/52">
+        {items.map(({ icon: Icon, label, value }) => (
+          <div key={label} className="inline-flex items-center gap-1.5">
+            <Icon className="h-3 w-3 shrink-0 text-current/38" />
+            <span className="uppercase tracking-[0.14em]">{label}</span>
+            <span className="font-medium tracking-normal text-current/80 tabular-nums">{value}</span>
           </div>
-          <div className="text-sm tracking-normal">{value}</div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    </section>
   )
 }

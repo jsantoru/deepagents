@@ -217,6 +217,7 @@ class MetricsService:
                     preview=preview,
                     message_count=len(messages),
                     last_message_at=messages[-1].created_at.isoformat(),
+                    active_run=await self.get_active_run_status(conversation.id),
                 )
             )
 

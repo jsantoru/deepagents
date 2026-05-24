@@ -61,6 +61,12 @@ export type ConversationSummary = {
   preview: string
   message_count: number
   last_message_at: string
+  active_run?: {
+    run_id: string
+    conversation_id: string
+    status: string
+    error_message?: string | null
+  } | null
 }
 
 export type ConversationSummariesResponse = {

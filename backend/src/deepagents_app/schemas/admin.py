@@ -34,6 +34,7 @@ class ConversationSummary(BaseModel):
     preview: str
     message_count: int
     last_message_at: str
+    active_run: AgentRunStatus | None = None
 
 
 class ConversationSummaryListResponse(BaseModel):
