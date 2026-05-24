@@ -10,7 +10,7 @@ from deepagents import create_deep_agent
 from tavily import TavilyClient
 
 from deepagents_app.core.config import get_settings
-from deepagents_app.schemas.chat import ChatRequest, ChatTraceEvent, ResearchMode
+from deepagents_app.schemas.chat import ChatAttachmentInput, ChatRequest, ChatTraceEvent, ResearchMode
 
 ANALYST_SYSTEM_PROMPT_BASE = """
 You are an open-source intelligence analyst performing professional research work for a user.
@@ -56,6 +56,9 @@ Source handling in the final deliverable:
 - Do not list sources that were not actually used in the report.
 
 If the available evidence is weak, incomplete, or contradictory, say so plainly and limit conclusions to what the sources support.
+
+Progress narration:
+- Between research steps, briefly narrate what you found and what you're doing next. Write these as short plain-text sentences (e.g. "Found 4 sources on X — now cross-checking claims about Y." or "Initial results are thin; broadening the search."). Keep them to one or two sentences. Do not format them as lists or headers.
 """.strip()
 
 LIGHT_RESEARCH_ADDENDUM = """
@@ -94,7 +97,11 @@ class AgentRunResult:
 
 class AgentService(ABC):
     @abstractmethod
-    async def chat(self, payload: ChatRequest) -> AgentRunResult:
+    async def chat(
+        self,
+        payload: ChatRequest,
+        conversation_messages: Sequence[dict[str, str]] | None = None,
+    ) -> AgentRunResult:
         """Execute a chat request."""
 
     @abstractmethod
@@ -102,6 +109,7 @@ class AgentService(ABC):
         self,
         payload: ChatRequest,
         on_event: Callable[[ChatTraceEvent], Awaitable[None]],
+        conversation_messages: Sequence[dict[str, str]] | None = None,
     ) -> AgentRunResult:
         """Execute a chat request while streaming trace events."""
 
@@ -119,16 +127,23 @@ class DeepAgentsService(AgentService):
             query: str,
             max_results: int | None = None,
             topic: Literal["general", "news", "finance"] = "general",
-            include_raw_content: bool = False,
         ):
             """Run a Tavily web search."""
             result_count = max_results or self.settings.agent_max_search_results
-            return tavily_client.search(
-                query,
-                max_results=result_count,
-                include_raw_content=include_raw_content,
-                topic=topic,
-            )
+            raw = tavily_client.search(query, max_results=result_count, topic=topic)
+            # Return only the fields the agent needs, with content capped to avoid
+            # the deepagents framework's tool-result size limit.
+            return {
+                "query": raw.get("query", query),
+                "results": [
+                    {
+                        "title": r.get("title", ""),
+                        "url": r.get("url", ""),
+                        "content": (r.get("content") or "")[:1500],
+                    }
+                    for r in raw.get("results", [])
+                ],
+            }
 
         return [internet_search]
 
@@ -139,11 +154,18 @@ class DeepAgentsService(AgentService):
             system_prompt=build_system_prompt(research_mode),
         )
 
-    async def chat(self, payload: ChatRequest) -> AgentRunResult:
+    async def chat(
+        self,
+        payload: ChatRequest,
+        conversation_messages: Sequence[dict[str, str]] | None = None,
+    ) -> AgentRunResult:
         agent = self._get_agent(payload.research_mode)
+        input_messages = list(conversation_messages) if conversation_messages is not None else [
+            {"role": "user", "content": build_user_message_content(payload)}
+        ]
         result = await asyncio.to_thread(
             agent.invoke,
-            {"messages": [{"role": "user", "content": payload.message}]},
+            {"messages": input_messages},
         )
         return _build_run_result(result, self.settings.agent_model)
 
@@ -151,9 +173,13 @@ class DeepAgentsService(AgentService):
         self,
         payload: ChatRequest,
         on_event: Callable[[ChatTraceEvent], Awaitable[None]],
+        conversation_messages: Sequence[dict[str, str]] | None = None,
     ) -> AgentRunResult:
         agent = self._get_agent(payload.research_mode)
-        stream_input = {"messages": [{"role": "user", "content": payload.message}]}
+        input_messages = list(conversation_messages) if conversation_messages is not None else [
+            {"role": "user", "content": build_user_message_content(payload)}
+        ]
+        stream_input = {"messages": input_messages}
         last_values: dict | None = None
         active_message_ids: set[str] = set()
 
@@ -225,6 +251,33 @@ def build_system_prompt(research_mode: ResearchMode) -> str:
         LIGHT_RESEARCH_ADDENDUM if research_mode == "light" else STANDARD_RESEARCH_ADDENDUM
     )
     return f"{ANALYST_SYSTEM_PROMPT_BASE}\n\n{mode_addendum}".strip()
+
+
+def build_user_message_content(payload: ChatRequest) -> str:
+    if not payload.attachments:
+        return payload.message
+
+    sections = [f"User request:\n{payload.message}", "", "Attached files:"]
+    for attachment in payload.attachments:
+        sections.extend(_format_attachment_block(attachment))
+
+    sections.extend(
+        [
+            "",
+            "Instructions:",
+            "Use the attached file contents as primary context for this request. "
+            "When referring to attached material, cite the filename.",
+        ]
+    )
+    return "\n".join(sections).strip()
+
+
+def _format_attachment_block(attachment: ChatAttachmentInput) -> list[str]:
+    return [
+        f"--- FILE: {attachment.name} ({attachment.mime_type}) ---",
+        attachment.text_content,
+        "",
+    ]
 
 
 def _normalize_message_content(content: object) -> str:
@@ -376,12 +429,55 @@ def _tool_stream_to_trace_event(data: object) -> ChatTraceEvent | None:
         )
 
     if event_name == "tool-finished":
+        output = data.get("output", "")
+        metadata: dict[str, str] = {"tool_name": tool_name}
+
+        # Resolve output to a dict regardless of whether deepagents delivers a
+        # raw dict, a JSON string, or a LangChain ToolMessage object.
+        output_dict: dict | None = None
+        if isinstance(output, dict):
+            output_dict = output
+        else:
+            # Unwrap ToolMessage (or any object with a .content attribute)
+            raw = output if isinstance(output, str) else getattr(output, "content", None)
+            if isinstance(raw, str):
+                try:
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, dict):
+                        output_dict = parsed
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+        if output_dict is not None:
+            results = output_dict.get("results", [])
+            if isinstance(results, list):
+                metadata["result_links"] = json.dumps(
+                    [
+                        {
+                            "title": r.get("title", ""),
+                            "url": r.get("url", ""),
+                            "snippet": (r.get("content") or "")[:200],
+                            "content": r.get("content", ""),
+                        }
+                        for r in results[:5]
+                        if isinstance(r, dict) and r.get("url")
+                    ]
+                )
+
+        # Use the resolved dict for content if available, otherwise fall back to
+        # _normalize_message_content which handles str/list/other types.
+        if output_dict is not None:
+            content_str = json.dumps(output_dict, ensure_ascii=True, default=str)
+        else:
+            content_str = _normalize_message_content(
+                output if isinstance(output, (str, list)) else getattr(output, "content", output)
+            )
         return ChatTraceEvent(
             id=tool_call_id,
             type="tool_result",
             title=f"Tool result: {tool_name}",
-            content=_normalize_message_content(data.get("output", "")),
-            metadata={"tool_name": tool_name},
+            content=content_str,
+            metadata=metadata,
         )
 
     if event_name == "tool-error":

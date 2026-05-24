@@ -10,6 +10,14 @@ export type ChatMetrics = {
 
 export type ResearchMode = 'light' | 'standard'
 
+export type ChatAttachment = {
+  id: string
+  name: string
+  mime_type: string
+  size_bytes: number
+  text_content: string
+}
+
 export type ChatTraceEvent = {
   id: string
   type: string
@@ -64,6 +72,8 @@ export type ConversationMessage = {
   content: string
   created_at: string
   metrics?: ChatMetrics | null
+  attachments?: Array<ChatAttachment & { sha256: string; created_at: string }>
+  trace?: ChatTraceEvent[]
 }
 
 export type ConversationDetailResponse = {
@@ -78,6 +88,7 @@ export async function sendChatMessage(
   message: string,
   conversationId?: string,
   researchMode: ResearchMode = 'standard',
+  attachments: ChatAttachment[] = [],
 ): Promise<ChatResponse> {
   const response = await fetch(`${API_BASE_URL}/chat`, {
     method: 'POST',
@@ -88,6 +99,7 @@ export async function sendChatMessage(
       message,
       conversation_id: conversationId,
       research_mode: researchMode,
+      attachments,
     }),
   })
 
@@ -108,6 +120,7 @@ export async function streamChatMessage(
   message: string,
   conversationId: string | undefined,
   researchMode: ResearchMode,
+  attachments: ChatAttachment[],
   callbacks: StreamChatCallbacks,
 ): Promise<ChatResponse> {
   const response = await fetch(`${API_BASE_URL}/chat/stream`, {
@@ -119,6 +132,7 @@ export async function streamChatMessage(
       message,
       conversation_id: conversationId,
       research_mode: researchMode,
+      attachments,
     }),
   })
 

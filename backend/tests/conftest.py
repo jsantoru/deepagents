@@ -1,4 +1,4 @@
-from collections.abc import Awaitable, Callable, Generator
+from collections.abc import Awaitable, Callable, Generator, Sequence
 from pathlib import Path
 
 import pytest
@@ -13,7 +13,18 @@ from deepagents_app.services.agent_service import AgentRunResult, AgentService
 
 
 class StubAgentService(AgentService):
-    async def chat(self, payload: ChatRequest) -> AgentRunResult:
+    invocations: list[list[dict[str, str]]] = []
+
+    async def chat(
+        self,
+        payload: ChatRequest,
+        conversation_messages: Sequence[dict[str, str]] | None = None,
+    ) -> AgentRunResult:
+        self.invocations.append(
+            list(conversation_messages)
+            if conversation_messages is not None
+            else [{"role": "user", "content": payload.message}]
+        )
         return AgentRunResult(
             answer=f"echo: {payload.message}",
             trace=[
@@ -49,7 +60,13 @@ class StubAgentService(AgentService):
         self,
         payload: ChatRequest,
         on_event: Callable[[ChatTraceEvent], Awaitable[None]],
+        conversation_messages: Sequence[dict[str, str]] | None = None,
     ) -> AgentRunResult:
+        self.invocations.append(
+            list(conversation_messages)
+            if conversation_messages is not None
+            else [{"role": "user", "content": payload.message}]
+        )
         trace = [
             ChatTraceEvent(
                 id="note-1",
@@ -100,6 +117,7 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[TestCli
     get_settings.cache_clear()
 
     app = create_application()
+    StubAgentService.invocations = []
     app.dependency_overrides[get_agent_service] = StubAgentService
 
     with TestClient(app) as test_client:

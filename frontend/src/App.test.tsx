@@ -301,6 +301,70 @@ describe('App chat flow', () => {
     })
   })
 
+  it('uploads a text file and sends it as structured attachment context', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: createSseStream([
+        {
+          event: 'final',
+          data: {
+            conversation_id: 'conversation-6',
+            run_id: 'run-6',
+            answer: 'Done.',
+            trace: [
+              {
+                id: 'final-answer-6',
+                type: 'final',
+                title: 'Final answer',
+                content: 'Done.',
+                metadata: {},
+              },
+            ],
+            metrics: {
+              model_name: 'openai:gpt-5-nano',
+              latency_ms: 55,
+              input_tokens: 8,
+              output_tokens: 4,
+              total_tokens: 12,
+              estimated_cost_usd: 0.000002,
+              search_calls: 0,
+            },
+          },
+        },
+      ]),
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+
+    const file = new File(['alpha\nbeta'], 'notes.txt', { type: 'text/plain' })
+    await user.upload(fileInput!, file)
+    expect(await screen.findByText('notes.txt')).toBeVisible()
+
+    await user.type(await screen.findByLabelText('Message'), 'Use this file')
+    await user.click(screen.getByRole('button', { name: 'Send prompt' }))
+
+    const chatRequest = getChatStreamRequest(fetchMock)
+    expect(chatRequest).toBeDefined()
+    expect(JSON.parse(String(chatRequest?.[1]?.body))).toMatchObject({
+      message: 'Use this file',
+      research_mode: 'standard',
+      attachments: [
+        {
+          name: 'notes.txt',
+          mime_type: 'text/plain',
+          size_bytes: 10,
+          text_content: 'alpha\nbeta',
+        },
+      ],
+    })
+  })
+
   it('suppresses unresolved tool-result placeholders until a query or results can be parsed', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.fn().mockResolvedValue({

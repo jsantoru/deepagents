@@ -35,7 +35,7 @@ function AppShell() {
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(249,249,247,0.96)_42%,_rgba(241,241,238,0.98)_100%)] text-foreground">
       <div
         className={[
-          'mx-auto flex min-h-screen w-full flex-col px-4 sm:px-6 lg:px-8',
+          'mx-auto flex min-h-screen w-full flex-col px-4',
           isChatRoute ? 'max-w-none px-0 sm:px-0 lg:px-0 mx-0' : 'max-w-7xl py-4',
         ].join(' ')}
       >

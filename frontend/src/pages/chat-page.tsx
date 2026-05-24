@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { memo, useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import {
   AlertCircle,
   ArrowUp,
@@ -20,7 +20,6 @@ import {
   Sigma,
   Sparkles,
   Square,
-  Wrench,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -32,6 +31,7 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   type ChatMetrics,
   type ChatTraceEvent,
+  type ChatAttachment,
   fetchConversationDetail,
   fetchConversationSummaries,
   type ConversationSummary,
@@ -39,13 +39,72 @@ import {
   streamChatMessage,
 } from '@/lib/api'
 
+// --- Stream event debug logger ---
+const _logTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const _logBuffer = new Map<string, { event: ChatTraceEvent; chunks: number }>()
+
+function logStreamEvent(event: ChatTraceEvent) {
+  const isDelta = event.type === 'assistant_delta' || event.type === 'tool_delta'
+
+  if (!isDelta) {
+    console.log(
+      `%c[stream] ${event.type}`,
+      'color:#6366f1;font-weight:bold',
+      {
+        id: event.id,
+        title: event.title,
+        content: event.content.length > 300 ? `${event.content.slice(0, 300)}…` : event.content,
+        metadata: event.metadata,
+      },
+    )
+    return
+  }
+
+  const prev = _logBuffer.get(event.id)
+  _logBuffer.set(event.id, { event, chunks: (prev?.chunks ?? 0) + 1 })
+
+  const existing = _logTimers.get(event.id)
+  if (existing) clearTimeout(existing)
+
+  _logTimers.set(event.id, setTimeout(() => {
+    const buf = _logBuffer.get(event.id)
+    if (buf) {
+      console.log(
+        `%c[stream] ${buf.event.type} (${buf.chunks} chunk${buf.chunks === 1 ? '' : 's'})`,
+        'color:#f59e0b;font-weight:bold',
+        {
+          id: buf.event.id,
+          title: buf.event.title,
+          content: buf.event.content.length > 300 ? `${buf.event.content.slice(0, 300)}…` : buf.event.content,
+          metadata: buf.event.metadata,
+        },
+      )
+      _logBuffer.delete(event.id)
+    }
+    _logTimers.delete(event.id)
+  }, 400))
+}
+// ----------------------------------
+
 type TranscriptMessage = {
   id: string
   role: 'user' | 'assistant'
   content: string
+  attachments?: PersistedAttachment[]
   trace?: ChatTraceEvent[]
   metrics?: ChatMetrics
 }
+
+type PersistedAttachment = ChatAttachment & {
+  sha256?: string
+  created_at?: string
+}
+
+const TEXT_ATTACHMENT_ACCEPT =
+  '.c,.cc,.cpp,.css,.csv,.go,.html,.java,.js,.json,.jsx,.log,.md,.py,.rb,.rs,.sql,.svg,.toml,.ts,.tsx,.txt,.xml,.yaml,.yml,text/plain,text/markdown,text/csv,application/json,application/xml,text/xml'
+const MAX_TEXT_ATTACHMENT_COUNT = 6
+const MAX_TEXT_ATTACHMENT_BYTES = 200_000
+const MAX_TOTAL_TEXT_ATTACHMENT_BYTES = 600_000
 
 const starterPrompts = [
   {
@@ -72,6 +131,7 @@ export function ChatPage() {
   const [conversationId, setConversationId] = useState<string>()
   const [conversationTitle, setConversationTitle] = useState('New chat')
   const [draft, setDraft] = useState('')
+  const [attachments, setAttachments] = useState<PersistedAttachment[]>([])
   const [messages, setMessages] = useState<TranscriptMessage[]>([])
   const [sessions, setSessions] = useState<ConversationSummary[]>([])
   const [isLoadingSessions, setIsLoadingSessions] = useState(true)
@@ -116,7 +176,7 @@ export function ChatPage() {
     }
   }
 
-  async function handleOpenConversation(targetConversationId: string) {
+  const handleOpenConversation = useCallback(async function handleOpenConversation(targetConversationId: string) {
     if (isSending) {
       return
     }
@@ -130,18 +190,45 @@ export function ChatPage() {
         id: message.id,
         role: message.role,
         content: message.content,
+        attachments: message.attachments ?? [],
         metrics: message.metrics ?? undefined,
+        trace: message.trace ?? [],
       })),
     )
-  }
+  }, [isSending])
 
-  function handleNewChat() {
+  const handleNewChat = useCallback(function handleNewChat() {
     setConversationId(undefined)
     setConversationTitle('New chat')
     setMessages([])
     setDraft('')
+    setAttachments([])
     setError(undefined)
     setLastSubmittedPrompt('')
+  }, [])
+
+  async function handleAddAttachments(files: FileList | null) {
+    if (!files?.length) {
+      return
+    }
+
+    try {
+      const nextAttachments = await parseTextAttachments(files, attachments)
+      setAttachments(nextAttachments)
+      setError(undefined)
+    } catch (attachmentError) {
+      setError(
+        attachmentError instanceof Error
+          ? attachmentError.message
+          : 'The selected files could not be attached.',
+      )
+    }
+  }
+
+  function handleRemoveAttachment(attachmentId: string) {
+    setAttachments((currentAttachments) =>
+      currentAttachments.filter((attachment) => attachment.id !== attachmentId),
+    )
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -156,6 +243,7 @@ export function ChatPage() {
       id: crypto.randomUUID(),
       role: 'user',
       content: trimmedDraft,
+      attachments,
     }
     const pendingAssistantId = crypto.randomUUID()
     const pendingAssistant: TranscriptMessage = {
@@ -171,12 +259,22 @@ export function ChatPage() {
       setConversationTitle(deriveConversationTitle(trimmedDraft))
     }
     setDraft('')
+    setAttachments([])
     setError(undefined)
     setIsSending(true)
 
     try {
-      const response = await streamChatMessage(trimmedDraft, conversationId, researchMode, {
+      const response = await streamChatMessage(trimmedDraft, conversationId, researchMode, attachments, {
+        onStatus: (payload) => {
+          const startedConversationId =
+            typeof payload.conversation_id === 'string' ? payload.conversation_id : undefined
+          if (startedConversationId) {
+            setConversationId(startedConversationId)
+            void loadConversationSummaries(startedConversationId)
+          }
+        },
         onTrace: (event) => {
+          logStreamEvent(event)
           setMessages((currentMessages) =>
             currentMessages.map((message) =>
               message.id === pendingAssistantId
@@ -260,9 +358,12 @@ export function ChatPage() {
                 error={error}
                 isDocked={false}
                 isSending={isSending}
+                attachments={attachments}
                 lastSubmittedPrompt={lastSubmittedPrompt}
+                onAddAttachments={handleAddAttachments}
                 onChange={setDraft}
                 onModeChange={setResearchMode}
+                onRemoveAttachment={handleRemoveAttachment}
                 onSubmit={handleSubmit}
                 researchMode={researchMode}
               />
@@ -271,10 +372,10 @@ export function ChatPage() {
                   <button
                     key={text}
                     type="button"
-                    className="flex w-full items-center gap-3 border-t border-stone-200/90 py-5 text-left text-lg text-stone-500 transition hover:text-stone-900"
+                    className="flex w-full items-center gap-3 border-t border-stone-200/90 py-4 text-left text-sm text-stone-500 transition hover:text-stone-900"
                     onClick={() => setDraft(text)}
                   >
-                    <Icon className="h-5 w-5 text-stone-400" />
+                    <Icon className="h-4 w-4 shrink-0 text-stone-400" />
                     <span>{text}</span>
                   </button>
                 ))}
@@ -289,7 +390,7 @@ export function ChatPage() {
         </div>
 
         {isComposerDocked ? (
-          <div className="sticky bottom-0 z-20 pt-8">
+          <div className="sticky bottom-0 z-20">
             <div className="mx-auto w-full max-w-5xl rounded-[32px] bg-[linear-gradient(180deg,rgba(249,249,247,0),rgba(249,249,247,0.94)_24%,rgba(249,249,247,0.98)_100%)]">
               <div className="pt-6">
               <PromptComposer
@@ -297,9 +398,12 @@ export function ChatPage() {
                 error={error}
                 isDocked
                 isSending={isSending}
+                attachments={attachments}
                 lastSubmittedPrompt={lastSubmittedPrompt}
+                onAddAttachments={handleAddAttachments}
                 onChange={setDraft}
                 onModeChange={setResearchMode}
+                onRemoveAttachment={handleRemoveAttachment}
                 onSubmit={handleSubmit}
                 researchMode={researchMode}
               />
@@ -312,7 +416,7 @@ export function ChatPage() {
   )
 }
 
-function SidebarNav({
+const SidebarNav = memo(function SidebarNav({
   activeConversationId,
   conversations,
   isLoading,
@@ -330,10 +434,10 @@ function SidebarNav({
       <div className="space-y-2">
         <button
           type="button"
-          className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-[1.05rem] text-stone-800 transition hover:bg-stone-100"
+          className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left text-sm text-stone-800 transition hover:bg-stone-100"
           onClick={onNewChat}
         >
-          <MessageSquarePlus className="h-5 w-5 text-stone-500" />
+          <MessageSquarePlus className="h-4 w-4 text-stone-500" />
           <span>New chat</span>
         </button>
         <SidebarUtility icon={Search} label="Search" />
@@ -343,11 +447,11 @@ function SidebarNav({
       </div>
 
       <div className="mt-10 min-h-0 flex-1 overflow-y-auto pr-1">
-        <div className="mb-4 px-3 text-sm font-medium text-stone-400">Projects</div>
+        <div className="mb-4 px-3 text-xs font-medium text-stone-400">Projects</div>
         <div className="space-y-5">
           <div>
-            <div className="mb-2 flex items-center gap-2 px-3 text-[1.05rem] text-stone-700">
-              <FolderOpen className="h-5 w-5 text-stone-400" />
+            <div className="mb-2 flex items-center gap-2 px-3 text-sm text-stone-700">
+              <FolderOpen className="h-4 w-4 text-stone-400" />
               <span>deepagents</span>
             </div>
             <div className="space-y-1">
@@ -361,7 +465,7 @@ function SidebarNav({
                     key={conversation.conversation_id}
                     type="button"
                     className={[
-                      'flex w-full items-center justify-between rounded-2xl px-3 py-3 text-left transition',
+                      'flex w-full items-center justify-between rounded-2xl px-3 py-2 text-left transition',
                       activeConversationId === conversation.conversation_id
                         ? 'bg-stone-100 text-stone-950'
                         : 'text-stone-700 hover:bg-stone-50',
@@ -369,10 +473,10 @@ function SidebarNav({
                     onClick={() => onOpenConversation(conversation.conversation_id)}
                   >
                     <div className="min-w-0">
-                      <div className="truncate text-[1rem]">{conversation.title}</div>
-                      <div className="truncate text-sm text-stone-400">{conversation.preview}</div>
+                      <div className="truncate text-sm">{conversation.title}</div>
+                      <div className="truncate text-xs text-stone-400">{conversation.preview}</div>
                     </div>
-                    <div className="ml-3 shrink-0 text-sm text-stone-400">
+                    <div className="ml-3 shrink-0 text-xs text-stone-400">
                       {formatRelativeTime(conversation.last_message_at)}
                     </div>
                   </button>
@@ -383,12 +487,12 @@ function SidebarNav({
         </div>
       </div>
 
-      <div className="border-t border-stone-200 px-3 py-4 text-sm text-stone-400">
+      <div className="border-t border-stone-200 px-3 py-4 text-xs text-stone-400">
         Session history
       </div>
     </div>
   )
-}
+})
 
 function SidebarUtility({
   icon: Icon,
@@ -403,9 +507,9 @@ function SidebarUtility({
     return (
       <NavLink
         to={to}
-        className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-[1.05rem] text-stone-700 transition hover:bg-stone-100"
+        className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left text-sm text-stone-700 transition hover:bg-stone-100"
       >
-        <Icon className="h-5 w-5 text-stone-500" />
+        <Icon className="h-4 w-4 text-stone-500" />
         <span>{label}</span>
       </NavLink>
     )
@@ -414,39 +518,46 @@ function SidebarUtility({
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-[1.05rem] text-stone-700 transition hover:bg-stone-100"
+      className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left text-sm text-stone-700 transition hover:bg-stone-100"
     >
-      <Icon className="h-5 w-5 text-stone-500" />
+      <Icon className="h-4 w-4 text-stone-500" />
       <span>{label}</span>
     </button>
   )
 }
 
 type PromptComposerProps = {
+  attachments: PersistedAttachment[]
   draft: string
   error?: string
   isDocked: boolean
   isSending: boolean
   lastSubmittedPrompt: string
+  onAddAttachments: (files: FileList | null) => void | Promise<void>
   onChange: (value: string) => void
   onModeChange: (mode: ResearchMode) => void
+  onRemoveAttachment: (attachmentId: string) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   researchMode: ResearchMode
 }
 
 function PromptComposer({
+  attachments,
   draft,
   error,
   isDocked,
   isSending,
   lastSubmittedPrompt,
+  onAddAttachments,
   onChange,
   onModeChange,
+  onRemoveAttachment,
   onSubmit,
   researchMode,
 }: PromptComposerProps) {
   const disabled = isSending
   const placeholder = isDocked ? 'Ask for follow-up changes' : 'Ask anything...'
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== 'Enter' || event.shiftKey) {
@@ -466,6 +577,17 @@ function PromptComposer({
   return (
     <form className="space-y-3" onSubmit={onSubmit}>
       <div className="overflow-hidden rounded-[30px] border border-stone-300 bg-white shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
+        <input
+          ref={fileInputRef}
+          hidden
+          accept={TEXT_ATTACHMENT_ACCEPT}
+          multiple
+          type="file"
+          onChange={(event) => {
+            onAddAttachments(event.target.files)
+            event.target.value = ''
+          }}
+        />
         <Textarea
           aria-label="Message"
           className="min-h-[92px] max-h-[600px] resize-none overflow-y-auto border-0 bg-transparent px-5 py-4 text-[1.05rem] leading-8 text-stone-900 shadow-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:bg-transparent disabled:text-stone-400 disabled:opacity-100"
@@ -475,11 +597,36 @@ function PromptComposer({
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={handleKeyDown}
         />
+        {attachments.length ? (
+          <div className="border-t border-stone-200 px-4 py-3">
+            <div className="mb-2 text-xs font-medium uppercase tracking-[0.2em] text-stone-400">
+              Attached text files
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {attachments.map((attachment) => (
+                <button
+                  key={attachment.id}
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-3 py-1.5 text-sm text-stone-700 transition hover:border-stone-300 hover:bg-stone-100"
+                  disabled={disabled}
+                  onClick={() => onRemoveAttachment(attachment.id)}
+                >
+                  <span>{attachment.name}</span>
+                  <span className="text-xs text-stone-400">{formatBytes(attachment.size_bytes)}</span>
+                  <span className="text-stone-400">x</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-stone-200 px-4 py-3">
           <div className="flex flex-wrap items-center gap-3 text-sm text-stone-500">
             <button
+              aria-label="Upload text files"
               type="button"
               className="inline-flex h-8 w-8 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-900"
+              disabled={disabled}
+              onClick={() => fileInputRef.current?.click()}
             >
               <Plus className="h-5 w-5" />
             </button>
@@ -564,7 +711,99 @@ function PromptComposer({
   )
 }
 
-function ConversationMessages({ messages }: { messages: TranscriptMessage[] }) {
+async function parseTextAttachments(
+  files: FileList,
+  existingAttachments: PersistedAttachment[],
+): Promise<PersistedAttachment[]> {
+  const selectedFiles = Array.from(files)
+  if (existingAttachments.length + selectedFiles.length > MAX_TEXT_ATTACHMENT_COUNT) {
+    throw new Error(`You can attach up to ${MAX_TEXT_ATTACHMENT_COUNT} text files per message.`)
+  }
+
+  const parsedAttachments = await Promise.all(
+    selectedFiles.map(async (file) => {
+      if (!isAllowedTextAttachment(file)) {
+        throw new Error(`Unsupported text file: ${file.name}`)
+      }
+
+      const textContent = await file.text()
+      const sizeBytes = new TextEncoder().encode(textContent).length
+      if (sizeBytes === 0) {
+        throw new Error(`The file "${file.name}" is empty.`)
+      }
+      if (sizeBytes > MAX_TEXT_ATTACHMENT_BYTES) {
+        throw new Error(`"${file.name}" exceeds the ${formatBytes(MAX_TEXT_ATTACHMENT_BYTES)} limit.`)
+      }
+
+      return {
+        id: crypto.randomUUID(),
+        name: file.name,
+        mime_type: file.type || inferMimeType(file.name),
+        size_bytes: sizeBytes,
+        text_content: textContent,
+      } satisfies PersistedAttachment
+    }),
+  )
+
+  const nextAttachments = [...existingAttachments, ...parsedAttachments]
+  const totalBytes = nextAttachments.reduce((sum, attachment) => sum + attachment.size_bytes, 0)
+  if (totalBytes > MAX_TOTAL_TEXT_ATTACHMENT_BYTES) {
+    throw new Error(
+      `Combined attachments exceed the ${formatBytes(MAX_TOTAL_TEXT_ATTACHMENT_BYTES)} limit.`,
+    )
+  }
+
+  return nextAttachments
+}
+
+function isAllowedTextAttachment(file: File): boolean {
+  const extension = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')).toLowerCase() : ''
+  if (!extension) {
+    return false
+  }
+
+  return TEXT_ATTACHMENT_ACCEPT.split(',').includes(extension) || file.type.startsWith('text/')
+}
+
+function inferMimeType(fileName: string): string {
+  const extension = fileName.includes('.')
+    ? fileName.slice(fileName.lastIndexOf('.')).toLowerCase()
+    : ''
+  switch (extension) {
+    case '.md':
+      return 'text/markdown'
+    case '.csv':
+      return 'text/csv'
+    case '.json':
+      return 'application/json'
+    case '.xml':
+    case '.svg':
+      return 'application/xml'
+    case '.yaml':
+    case '.yml':
+    case '.toml':
+    case '.sql':
+    case '.log':
+    case '.txt':
+    default:
+      return 'text/plain'
+  }
+}
+
+function formatBytes(sizeBytes: number): string {
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`
+  }
+
+  const sizeKb = sizeBytes / 1024
+  if (sizeKb < 1024) {
+    return `${sizeKb.toFixed(1)} KB`
+  }
+
+  return `${(sizeKb / 1024).toFixed(1)} MB`
+}
+
+const ConversationMessages = memo(function ConversationMessages({ messages }: { messages: TranscriptMessage[] }) {
   return (
     <div className="space-y-4">
       {messages.map((message) => (
@@ -578,22 +817,25 @@ function ConversationMessages({ messages }: { messages: TranscriptMessage[] }) {
           ].join(' ')}
         >
           {message.role === 'user' ? (
-            <div className="mb-2 text-xs uppercase tracking-[0.28em] text-current/60">You</div>
-          ) : null}
-          <MessageBody message={message} />
-          {message.trace?.length ? <TraceTimeline trace={message.trace} /> : null}
-          {message.metrics ? <RunMetrics metrics={message.metrics} /> : null}
+            <>
+              <div className="mb-2 text-xs uppercase tracking-[0.28em] text-current/60">You</div>
+              <MessageBody message={message} />
+              {message.attachments?.length ? <AttachmentAuditTrail attachments={message.attachments} /> : null}
+            </>
+          ) : (
+            <>
+              {message.trace?.length ? <TraceTimeline trace={message.trace} isFinal={message.metrics !== undefined} /> : null}
+              <MessageBody message={message} />
+              {message.metrics ? <RunMetrics metrics={message.metrics} /> : null}
+            </>
+          )}
         </article>
       ))}
     </div>
   )
-}
+})
 
 function MessageBody({ message }: { message: TranscriptMessage }) {
-  if (message.role === 'assistant' && message.trace?.length) {
-    return null
-  }
-
   if (!message.content.trim()) {
     if (message.role === 'assistant') {
       return (
@@ -613,7 +855,35 @@ function MessageBody({ message }: { message: TranscriptMessage }) {
   return <p className="whitespace-pre-wrap text-sm leading-7">{message.content}</p>
 }
 
-function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
+function AttachmentAuditTrail({ attachments }: { attachments: PersistedAttachment[] }) {
+  return (
+    <div className="mt-4 space-y-2 border-t border-current/10 pt-4">
+      <div className="text-xs uppercase tracking-[0.24em] text-current/60">Attached files</div>
+      {attachments.map((attachment) => (
+        <details
+          key={attachment.id}
+          className="rounded-2xl border border-current/10 bg-black/5 px-4 py-3"
+        >
+          <summary className="cursor-pointer list-none">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="font-medium">{attachment.name}</span>
+              <span className="text-xs text-current/60">{attachment.mime_type}</span>
+              <span className="text-xs text-current/60">{formatBytes(attachment.size_bytes)}</span>
+              {attachment.sha256 ? (
+                <span className="text-xs text-current/60">sha256 {attachment.sha256.slice(0, 12)}...</span>
+              ) : null}
+            </div>
+          </summary>
+          <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-2xl bg-black/8 px-3 py-3 text-xs leading-6 text-current/85">
+            {attachment.text_content}
+          </pre>
+        </details>
+      ))}
+    </div>
+  )
+}
+
+function TraceTimeline({ trace, isFinal }: { trace: ChatTraceEvent[]; isFinal?: boolean }) {
   const orderedTrace = orderTraceEvents(trace)
 
   return (
@@ -622,6 +892,9 @@ function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
         const Icon = getTraceIcon(event.type)
         const display = formatTraceEvent(event)
         if (!display) {
+          return null
+        }
+        if (isFinal && display.animatePulse) {
           return null
         }
         if (display.inlineText) {
@@ -642,10 +915,12 @@ function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
             key={`${event.type}-${index}-${event.title}`}
             className="rounded-3xl border border-current/10 bg-black/3 px-4 py-4"
           >
-            <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-current/60">
-              <Icon className="h-3.5 w-3.5" />
-              {display.title}
-            </div>
+            {display.title ? (
+              <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-current/60">
+                <Icon className="h-3.5 w-3.5" />
+                {display.title}
+              </div>
+            ) : null}
             {display.summary ? (
               <TraceSummary
                 animatePulse={display.animatePulse}
@@ -665,23 +940,19 @@ function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
                 ))}
               </div>
             ) : null}
-            {display.links.length ? (
-              <div className="mt-3 space-y-2">
-                {display.links.map((link) => (
-                  <a
-                    key={link.url}
-                    href={link.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-2 rounded-2xl border border-current/10 bg-white/30 px-3 py-2 text-sm leading-6 hover:bg-white/50"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate">{link.label}</span>
-                  </a>
-                ))}
-              </div>
+            {display.results.length ? (
+              <details className="mt-3">
+                <summary className="cursor-pointer list-none text-xs text-current/50 hover:text-current/70">
+                  {display.results.length} source{display.results.length === 1 ? '' : 's'}
+                </summary>
+                <div className="mt-2 space-y-2">
+                  {display.results.map((result) => (
+                    <SearchResultCard key={result.url} result={result} />
+                  ))}
+                </div>
+              </details>
             ) : null}
-            {!display.summary && !display.bullets.length && !display.links.length ? (
+            {!display.summary && !display.bullets.length && !display.links.length && !display.results.length ? (
               <TraceSummary event={event} summary={event.content} />
             ) : null}
             {Object.keys(filterDisplayMetadata(display.metadata)).length ? (
@@ -701,6 +972,43 @@ function TraceTimeline({ trace }: { trace: ChatTraceEvent[] }) {
         )
       })}
     </div>
+  )
+}
+
+function SearchResultCard({ result }: { result: SearchResult }) {
+  let domain = result.url
+  try {
+    domain = new URL(result.url).hostname.replace(/^www\./, '')
+  } catch {
+    // keep raw url as domain
+  }
+
+  return (
+    <details className="group rounded-2xl border border-current/10 bg-white/30">
+      <summary className="flex cursor-pointer list-none items-start gap-3 px-3 py-2.5">
+        <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-current/50" />
+        <div className="min-w-0 flex-1">
+          <a
+            href={result.url}
+            target="_blank"
+            rel="noreferrer"
+            className="block truncate text-sm font-medium leading-5 hover:underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {result.title || result.url}
+          </a>
+          <div className="truncate text-xs text-current/50">{domain}</div>
+          {result.snippet ? (
+            <p className="mt-1 line-clamp-2 text-xs leading-5 text-current/70">{result.snippet}</p>
+          ) : null}
+        </div>
+      </summary>
+      {result.content ? (
+        <div className="border-t border-current/10 px-3 py-3">
+          <p className="whitespace-pre-wrap text-xs leading-5 text-current/70">{result.content}</p>
+        </div>
+      ) : null}
+    </details>
   )
 }
 
@@ -741,11 +1049,6 @@ function MarkdownReport({ content }: { content: string }) {
 
 function getTraceIcon(type: string) {
   switch (type) {
-    case 'tool':
-    case 'tool_result':
-    case 'tool_delta':
-    case 'tool_error':
-      return Wrench
     case 'final':
       return Sparkles
     default:
@@ -753,18 +1056,29 @@ function getTraceIcon(type: string) {
   }
 }
 
+type SearchResult = {
+  title: string
+  url: string
+  snippet: string
+  content: string
+}
+
 type TraceDisplay = {
   title: string
   summary: string
   bullets: string[]
   links: Array<{ label: string; url: string }>
+  results: SearchResult[]
   metadata: Record<string, string | number>
   animatePulse?: boolean
   inlineText?: string
 }
 
 function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
-  const resolvedToolName = resolveToolName(event)
+  // Final answer is already rendered in MessageBody — skip to avoid duplication
+  if (event.type === 'final') {
+    return null
+  }
 
   if (event.type === 'assistant' || event.type === 'assistant_delta') {
     const normalizedContent = normalizeStructuredPayloadText(
@@ -778,52 +1092,48 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
       )
       if (toolCalls.length || reasoningSteps.length) {
         const reasoningSummary = extractReasoningSummary(reasoningSteps)
-        if (!toolCalls.length && !reasoningSummary) {
+        if (!reasoningSummary) {
           return {
             title: '',
             summary: '',
             bullets: [],
             links: [],
+            results: [],
             metadata: {},
             animatePulse: true,
             inlineText: 'Thinking...',
           }
         }
         return {
-          title: toolCalls.length ? 'Planning next steps' : 'Reasoning',
-          summary:
-            toolCalls.length > 0
-              ? `Preparing ${toolCalls.length} web search${toolCalls.length > 1 ? 'es' : ''}.`
-              : reasoningSummary,
-          bullets: toolCalls.map((call) => {
-            const args = tryParseJson(String(call.arguments))
-            const query = isRecord(args) && typeof args.query === 'string' ? args.query : 'Search'
-            return `Search: ${query}`
-          }),
+          title: '',
+          summary: '',
+          bullets: [],
           links: [],
-          metadata:
-            reasoningSummary && reasoningSteps.length > 0
-              ? { reasoning_steps: reasoningSteps.length }
-              : {},
+          results: [],
+          metadata: {},
           animatePulse: false,
+          inlineText: reasoningSummary,
         }
       }
     }
-
-    if (looksLikeJsonFragment(normalizedContent)) {
-      const queries = extractSearchQueriesFromJsonText(normalizedContent)
-      if (queries.length > 0) {
+    // Show the first chunk of any plain-text assistant message in the trace so reasoning
+    // notes surface. assistant_delta events (streaming continuations) are skipped here —
+    // they accumulate into message.content via updateAssistantContent instead.
+    if (event.type === 'assistant') {
+      const plainText = normalizedContent.trim()
+      if (plainText && !plainText.startsWith('{') && !plainText.startsWith('[')) {
         return {
-          title: 'Planning next steps',
-          summary: `Preparing ${queries.length} web search${queries.length > 1 ? 'es' : ''}.`,
-          bullets: queries.map((query) => `Search: ${query}`),
+          title: '',
+          summary: '',
+          bullets: [],
           links: [],
-          metadata: event.metadata,
+          results: [],
+          metadata: {},
           animatePulse: false,
+          inlineText: plainText.length > 300 ? `${plainText.slice(0, 300)}…` : plainText,
         }
       }
     }
-
     return null
   }
 
@@ -832,114 +1142,75 @@ function formatTraceEvent(event: ChatTraceEvent): TraceDisplay | null {
       unwrapStructuredToolContent(event.content),
     )
     const parsed = tryParseJson(normalizedContent)
-    if (isRecord(parsed)) {
-      if ('query' in parsed && Array.isArray(parsed.results)) {
-        const bullets = parsed.results
-          .slice(0, 3)
-          .map((result) => {
-            if (!isRecord(result)) {
-              return null
-            }
-            const title = typeof result.title === 'string' ? result.title : 'Untitled result'
-            const snippet =
-              typeof result.content === 'string' ? compactText(result.content, 120) : ''
-            return snippet ? `${title}: ${snippet}` : title
-          })
-          .filter((value): value is string => Boolean(value))
 
-        const links = parsed.results
-          .slice(0, 3)
-          .map((result) => {
-            if (!isRecord(result) || typeof result.url !== 'string') {
-              return null
-            }
-            return {
-              label:
-                typeof result.title === 'string' && result.title.trim()
-                  ? result.title
-                  : result.url,
-              url: result.url,
-            }
-          })
-          .filter((value): value is { label: string; url: string } => Boolean(value))
+    if (event.type === 'tool_result') {
+      // Input query preserved from tool-started event by applyTraceEvent
+      let query: string | undefined =
+        typeof event.metadata.input_query === 'string' ? event.metadata.input_query : undefined
+      if (!query && isRecord(parsed) && typeof parsed.query === 'string') {
+        query = parsed.query
+      }
+      if (!query) {
+        query =
+          extractSearchQueriesFromJsonText(normalizedContent)[0] ??
+          extractSearchQueriesFromJsonText(event.content)[0] ??
+          extractSearchQueriesFromPythonRepr(event.content)[0]
+      }
 
-        const domains = Array.from(
-          new Set(
-            links
-              .map((link) => {
-                try {
-                  return new URL(link.url).hostname.replace(/^www\./, '')
-                } catch {
-                  return null
-                }
+      // Results serialized by backend into metadata.result_links
+      const results: SearchResult[] = []
+      const resultLinksRaw = event.metadata.result_links
+      if (typeof resultLinksRaw === 'string') {
+        const parsed2 = tryParseJson(resultLinksRaw)
+        if (Array.isArray(parsed2)) {
+          for (const r of parsed2) {
+            if (isRecord(r) && typeof r.url === 'string') {
+              results.push({
+                title: typeof r.title === 'string' ? r.title : '',
+                url: r.url,
+                snippet: typeof r.snippet === 'string' ? r.snippet : '',
+                content: typeof r.content === 'string' ? r.content : '',
               })
-              .filter((value): value is string => Boolean(value)),
-          ),
-        )
-
-        return {
-          title: resolveToolTitle(event, resolvedToolName),
-          summary:
-            typeof parsed.query === 'string'
-              ? `Query: ${parsed.query}`
-              : `${parsed.results.length} search results returned.`,
-          bullets,
-          links,
-          metadata: {
-            ...(typeof parsed.response_time === 'number'
-              ? { response_time_s: parsed.response_time }
-              : {}),
-            ...(typeof parsed.results.length === 'number'
-              ? { results: parsed.results.length }
-              : {}),
-            ...(domains.length ? { sources: domains.slice(0, 3).join(', ') } : {}),
-          },
-          animatePulse: false,
+            }
+          }
         }
       }
 
-      if ('query' in parsed) {
-        return {
-          title: resolveToolTitle(event, resolvedToolName),
-          summary:
-            typeof parsed.query === 'string' ? `Query: ${parsed.query}` : 'Preparing search.',
-          bullets: [],
-          links: [],
-          metadata: withResolvedToolName(event.metadata, resolvedToolName),
-          animatePulse: event.type !== 'tool_result',
-        }
-      }
-    }
-
-    if (looksLikeJsonFragment(normalizedContent)) {
-      const queries = extractSearchQueriesFromJsonText(normalizedContent)
-      if (event.type === 'tool_result' && queries.length === 0) {
-        return null
-      }
       return {
-        title: resolveToolTitle(event, resolvedToolName),
-        summary:
-          queries[0]
-            ? `Query: ${queries[0]}`
-            : event.type === 'tool_result'
-              ? 'Search results received.'
-              : 'Receiving search results...',
+        title: '',
+        summary: query ? `Websearch: ${query}` : 'Websearch complete.',
         bullets: [],
         links: [],
-        metadata: withResolvedToolName(event.metadata, resolvedToolName),
-        animatePulse: event.type !== 'tool_result',
+        results,
+        metadata: {},
+        animatePulse: false,
       }
+    }
+
+    // tool / tool_delta — show running state
+    let query: string | undefined
+    if (isRecord(parsed) && typeof parsed.query === 'string') {
+      query = parsed.query
+    }
+    if (!query) {
+      query =
+        extractSearchQueriesFromJsonText(normalizedContent)[0] ??
+        extractSearchQueriesFromJsonText(event.content)[0] ??
+        extractSearchQueriesFromPythonRepr(event.content)[0]
+    }
+    return {
+      title: '',
+      summary: '',
+      bullets: [],
+      links: [],
+      results: [],
+      metadata: {},
+      animatePulse: true,
+      inlineText: query ? `Websearch: ${query}...` : 'Searching the web...',
     }
   }
 
-  return {
-    title: event.title,
-    summary: event.content,
-    bullets: [],
-    links: [],
-    metadata: event.metadata,
-    animatePulse: false,
-  }
+  return null
 }
 
 function tryParseJson(value: string): unknown {
@@ -983,13 +1254,6 @@ function extractReasoningSummary(reasoningSteps: unknown[]): string {
   return summaries.join(' ')
 }
 
-function compactText(value: string, maxLength: number): string {
-  const normalized = value.replace(/\s+/g, ' ').trim()
-  if (normalized.length <= maxLength) {
-    return normalized
-  }
-  return `${normalized.slice(0, maxLength - 1)}...`
-}
 
 function normalizeReportMarkdown(value: string): string {
   const lines = value.replace(/\r\n/g, '\n').split('\n')
@@ -1120,70 +1384,15 @@ function filterDisplayMetadata(
   )
 }
 
-function resolveToolName(event: ChatTraceEvent): string | undefined {
-  const metadataToolName = typeof event.metadata.tool_name === 'string' ? event.metadata.tool_name : undefined
-  if (metadataToolName && metadataToolName !== 'tool') {
-    return metadataToolName
-  }
 
-  return extractWrappedToolName(event.content)
-}
 
-function extractWrappedToolName(value: string): string | undefined {
-  const singleQuotedMatch = value.match(/\sname='([^']+)'/)
-  if (singleQuotedMatch?.[1]) {
-    return singleQuotedMatch[1]
-  }
-
-  const doubleQuotedMatch = value.match(/\sname="([^"]+)"/)
-  if (doubleQuotedMatch?.[1]) {
-    return doubleQuotedMatch[1]
-  }
-
-  return undefined
-}
-
-function resolveToolTitle(event: ChatTraceEvent, toolName?: string): string {
-  if (event.type === 'tool_result') {
-    return toolName ? `Search results: ${toolName}` : 'Search results'
-  }
-
-  if (event.type === 'tool') {
-    return toolName ? `Using tool: ${toolName}` : 'Searching the web'
-  }
-
-  if (event.type === 'tool_delta') {
-    return toolName ? `Using tool: ${toolName}` : 'Searching the web'
-  }
-
-  if (event.type === 'tool_error') {
-    return toolName ? `Tool error: ${toolName}` : 'Tool error'
-  }
-
-  return event.title
-}
-
-function withResolvedToolName(
-  metadata: Record<string, string | number>,
-  toolName?: string,
-): Record<string, string | number> {
-  if (!toolName) {
-    return metadata
-  }
-
-  return {
-    ...metadata,
-    tool_name: toolName,
-  }
-}
-
-function looksLikeJsonFragment(value: string): boolean {
-  const trimmed = value.trim()
-  return trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.includes('"query"')
-}
 
 function extractSearchQueriesFromJsonText(value: string): string[] {
   return Array.from(value.matchAll(/"query"\s*:\s*"([^"]+)"/g), (match) => match[1])
+}
+
+function extractSearchQueriesFromPythonRepr(value: string): string[] {
+  return Array.from(value.matchAll(/'query'\s*:\s*'([^']+)'/g), (match) => match[1])
 }
 
 function extractPrimaryQuery(value: string): string | undefined {
@@ -1224,13 +1433,24 @@ function applyTraceEvent(trace: ChatTraceEvent[], incomingEvent: ChatTraceEvent)
   }
 
   const currentEvent = trace[eventIndex]
-  const updatedEvent =
-    incomingEvent.type === 'assistant_delta' || incomingEvent.type === 'tool_delta'
-      ? {
-          ...currentEvent,
-          content: `${currentEvent.content}${incomingEvent.content}`,
-        }
-      : incomingEvent
+  let updatedEvent: ChatTraceEvent
+  if (incomingEvent.type === 'assistant_delta' || incomingEvent.type === 'tool_delta') {
+    updatedEvent = {
+      ...currentEvent,
+      content: `${currentEvent.content}${incomingEvent.content}`,
+    }
+  } else if (incomingEvent.type === 'tool_result' && currentEvent.type === 'tool') {
+    // Preserve the input query from the tool-started event so the result can display it
+    const inputQuery = extractPrimaryQuery(currentEvent.content)
+    updatedEvent = {
+      ...incomingEvent,
+      metadata: inputQuery
+        ? { ...incomingEvent.metadata, input_query: inputQuery }
+        : incomingEvent.metadata,
+    }
+  } else {
+    updatedEvent = incomingEvent
+  }
 
   return trace.map((event, index) => (index === eventIndex ? updatedEvent : event))
 }
@@ -1297,7 +1517,19 @@ function isToolTraceType(type: string): boolean {
 
 function updateAssistantContent(content: string, event: ChatTraceEvent): string {
   if (event.type === 'final') {
-    return content ? `${content}${event.content}` : event.content
+    // onFinal will overwrite with the clean full answer; this handles the non-streaming path
+    return event.content
+  }
+
+  if (event.type === 'assistant' || event.type === 'assistant_delta') {
+    const normalizedContent = normalizeStructuredPayloadText(
+      unwrapStructuredToolContent(event.content),
+    ).trim()
+    // Accumulate plain-text content (not JSON tool-call blocks) so the answer
+    // streams progressively in MessageBody before onFinal fires.
+    if (normalizedContent && !normalizedContent.startsWith('{') && !normalizedContent.startsWith('[')) {
+      return content + normalizedContent
+    }
   }
 
   return content

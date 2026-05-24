@@ -1,3 +1,5 @@
+import hashlib
+import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from time import perf_counter
@@ -6,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deepagents_app.core.pricing import estimate_cost_usd
-from deepagents_app.models.chat import AgentRun, Conversation, Message
+from deepagents_app.models.chat import AgentRun, Conversation, Message, MessageAttachment
 from deepagents_app.schemas.admin import (
     AdminOverviewResponse,
     ConversationDetailResponse,
@@ -16,7 +18,13 @@ from deepagents_app.schemas.admin import (
     AdminRunListResponse,
     AdminRunSummary,
 )
-from deepagents_app.schemas.chat import ChatRequest, ChatResponse, ChatRunMetrics, ChatTraceEvent
+from deepagents_app.schemas.chat import (
+    ChatRequest,
+    ChatResponse,
+    ChatRunMetrics,
+    ChatTraceEvent,
+    ConversationAttachment,
+)
 from deepagents_app.services.agent_service import AgentRunResult, AgentService
 
 
@@ -31,11 +39,11 @@ class MetricsService:
         self.session = session
 
     async def run_chat(self, payload: ChatRequest, agent_service: AgentService) -> ChatResponse:
-        conversation = await self._get_or_create_conversation(payload.conversation_id)
-        self.session.add(Message(conversation_id=conversation.id, role="user", content=payload.message))
+        conversation = await self.prepare_chat(payload)
+        conversation_messages = await self.build_conversation_messages(conversation.id)
 
         started_at = perf_counter()
-        agent_result = await agent_service.chat(payload)
+        agent_result = await agent_service.chat(payload, conversation_messages=conversation_messages)
         latency_ms = int((perf_counter() - started_at) * 1000)
         return await self._finalize_chat(conversation.id, agent_result, latency_ms)
 
@@ -45,13 +53,60 @@ class MetricsService:
         agent_service: AgentService,
         on_event: Callable[[ChatTraceEvent], Awaitable[None]],
     ) -> ChatResponse:
-        conversation = await self._get_or_create_conversation(payload.conversation_id)
-        self.session.add(Message(conversation_id=conversation.id, role="user", content=payload.message))
+        conversation = await self.prepare_chat(payload)
+        conversation_messages = await self.build_conversation_messages(conversation.id)
 
         started_at = perf_counter()
-        agent_result = await agent_service.stream_chat(payload, on_event)
+        agent_result = await agent_service.stream_chat(
+            payload,
+            on_event,
+            conversation_messages=conversation_messages,
+        )
         latency_ms = int((perf_counter() - started_at) * 1000)
         return await self._finalize_chat(conversation.id, agent_result, latency_ms)
+
+    async def prepare_chat(self, payload: ChatRequest) -> Conversation:
+        conversation = await self._get_or_create_conversation(payload.conversation_id)
+        user_message = Message(conversation_id=conversation.id, role="user", content=payload.message)
+        self.session.add(user_message)
+        await self.session.flush()
+
+        for index, attachment in enumerate(payload.attachments):
+            self.session.add(
+                MessageAttachment(
+                    conversation_id=conversation.id,
+                    message_id=user_message.id,
+                    name=attachment.name,
+                    mime_type=attachment.mime_type,
+                    size_bytes=attachment.size_bytes,
+                    sha256=hashlib.sha256(attachment.text_content.encode("utf-8")).hexdigest(),
+                    text_content=attachment.text_content,
+                    order_index=index,
+                )
+            )
+
+        await self.session.commit()
+        return conversation
+
+    async def build_conversation_messages(self, conversation_id: str) -> list[dict[str, str]]:
+        messages = await self._load_conversation_messages(conversation_id)
+        attachments_by_message_id = await self._load_attachments_by_message_id(
+            [message.id for message in messages]
+        )
+
+        conversation_messages: list[dict[str, str]] = []
+        for message in messages:
+            if message.role == "user":
+                content = self._format_user_message_for_agent(
+                    message.content,
+                    attachments_by_message_id.get(message.id, []),
+                )
+            else:
+                content = message.content
+
+            conversation_messages.append({"role": message.role, "content": content})
+
+        return conversation_messages
 
     async def _finalize_chat(
         self,
@@ -159,13 +214,7 @@ class MetricsService:
         if conversation is None:
             return None
 
-        messages = (
-            await self.session.execute(
-                select(Message)
-                .where(Message.conversation_id == conversation_id)
-                .order_by(Message.created_at.asc())
-            )
-        ).scalars().all()
+        messages = await self._load_conversation_messages(conversation_id)
         if not messages:
             return ConversationDetailResponse(
                 conversation_id=conversation_id,
@@ -181,6 +230,10 @@ class MetricsService:
             ).scalars().all()
             runs_by_id = {run.id: run for run in runs}
 
+        attachments_by_message_id = await self._load_attachments_by_message_id(
+            [message.id for message in messages]
+        )
+
         return ConversationDetailResponse(
             conversation_id=conversation_id,
             title=_derive_conversation_title(messages),
@@ -193,6 +246,21 @@ class MetricsService:
                     metrics=self._to_metrics(runs_by_id[message.run_id])
                     if message.run_id and message.run_id in runs_by_id
                     else None,
+                    attachments=[
+                        ConversationAttachment(
+                            id=attachment.id,
+                            name=attachment.name,
+                            mime_type=attachment.mime_type,
+                            size_bytes=attachment.size_bytes,
+                            sha256=attachment.sha256,
+                            text_content=attachment.text_content,
+                            created_at=attachment.created_at.isoformat(),
+                        )
+                        for attachment in attachments_by_message_id.get(message.id, [])
+                    ],
+                    trace=self._deserialize_trace(runs_by_id[message.run_id].trace_data)
+                    if message.run_id and message.run_id in runs_by_id
+                    else [],
                 )
                 for message in messages
             ],
@@ -208,6 +276,63 @@ class MetricsService:
         self.session.add(conversation)
         await self.session.flush()
         return conversation
+
+    async def _load_conversation_messages(self, conversation_id: str) -> list[Message]:
+        return (
+            await self.session.execute(
+                select(Message)
+                .where(Message.conversation_id == conversation_id)
+                .order_by(Message.created_at.asc())
+            )
+        ).scalars().all()
+
+    async def _load_attachments_by_message_id(
+        self,
+        message_ids: list[str],
+    ) -> dict[str, list[MessageAttachment]]:
+        attachments_by_message_id: dict[str, list[MessageAttachment]] = {}
+        if not message_ids:
+            return attachments_by_message_id
+
+        attachments = (
+            await self.session.execute(
+                select(MessageAttachment)
+                .where(MessageAttachment.message_id.in_(message_ids))
+                .order_by(MessageAttachment.order_index.asc(), MessageAttachment.created_at.asc())
+            )
+        ).scalars().all()
+        for attachment in attachments:
+            attachments_by_message_id.setdefault(attachment.message_id, []).append(attachment)
+
+        return attachments_by_message_id
+
+    @staticmethod
+    def _format_user_message_for_agent(
+        content: str,
+        attachments: list[MessageAttachment],
+    ) -> str:
+        if not attachments:
+            return content
+
+        sections = [f"User request:\n{content}", "", "Attached files:"]
+        for attachment in attachments:
+            sections.extend(
+                [
+                    f"--- FILE: {attachment.name} ({attachment.mime_type}) ---",
+                    attachment.text_content,
+                    "",
+                ]
+            )
+
+        sections.extend(
+            [
+                "",
+                "Instructions:",
+                "Use the attached file contents as primary context for this request. "
+                "When referring to attached material, cite the filename.",
+            ]
+        )
+        return "\n".join(sections).strip()
 
     async def _persist_run(
         self,
@@ -228,6 +353,7 @@ class MetricsService:
                 output_tokens=agent_result.output_tokens,
             ),
             search_calls=agent_result.search_calls,
+            trace_data=json.dumps([event.model_dump() for event in agent_result.trace]),
         )
         self.session.add(run)
         await self.session.flush()
@@ -244,6 +370,15 @@ class MetricsService:
             estimated_cost_usd=round(run.estimated_cost_usd, 6),
             search_calls=run.search_calls,
         )
+
+    @staticmethod
+    def _deserialize_trace(trace_data: str) -> list[ChatTraceEvent]:
+        """Deserialize trace events from JSON string."""
+        try:
+            trace_list = json.loads(trace_data)
+            return [ChatTraceEvent(**event) for event in trace_list]
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return []
 
 
 def _derive_conversation_title(messages: list[Message]) -> str:

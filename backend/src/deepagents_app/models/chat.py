@@ -25,6 +25,7 @@ class Conversation(Base):
 
     runs: Mapped[list["AgentRun"]] = relationship(back_populates="conversation")
     messages: Mapped[list["Message"]] = relationship(back_populates="conversation")
+    attachments: Mapped[list["MessageAttachment"]] = relationship(back_populates="conversation")
 
 
 class AgentRun(Base):
@@ -39,6 +40,7 @@ class AgentRun(Base):
     total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     estimated_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     search_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    trace_data: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON array of trace events
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -65,3 +67,26 @@ class Message(Base):
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")
     run: Mapped["AgentRun | None"] = relationship(back_populates="messages")
+    attachments: Mapped[list["MessageAttachment"]] = relationship(back_populates="message")
+
+
+class MessageAttachment(Base):
+    __tablename__ = "message_attachments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), nullable=False, index=True)
+    message_id: Mapped[str] = mapped_column(ForeignKey("messages.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    text_content: Mapped[str] = mapped_column(Text, nullable=False)
+    order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    conversation: Mapped["Conversation"] = relationship(back_populates="attachments")
+    message: Mapped["Message"] = relationship(back_populates="attachments")

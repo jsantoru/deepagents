@@ -2,9 +2,11 @@ from deepagents_app.services.agent_service import (
     ANALYST_SYSTEM_PROMPT,
     LIGHT_RESEARCH_ADDENDUM,
     STANDARD_RESEARCH_ADDENDUM,
+    build_user_message_content,
     _normalize_message_content,
     build_system_prompt,
 )
+from deepagents_app.schemas.chat import ChatAttachmentInput, ChatRequest
 
 
 def test_normalize_message_content_returns_plain_string() -> None:
@@ -57,3 +59,26 @@ def test_build_system_prompt_uses_standard_research_constraints() -> None:
     assert "up to 5 minutes" in prompt
     assert STANDARD_RESEARCH_ADDENDUM in prompt
     assert LIGHT_RESEARCH_ADDENDUM not in prompt
+
+
+def test_build_user_message_content_includes_attachment_blocks() -> None:
+    payload = ChatRequest(
+        message="Summarize this file",
+        attachments=[
+            ChatAttachmentInput(
+                id="att-1",
+                name="notes.md",
+                mime_type="text/markdown",
+                size_bytes=16,
+                text_content="alpha\nbeta\ngamma",
+            )
+        ],
+    )
+
+    content = build_user_message_content(payload)
+
+    assert "User request:\nSummarize this file" in content
+    assert "Attached files:" in content
+    assert "--- FILE: notes.md (text/markdown) ---" in content
+    assert "alpha\nbeta\ngamma" in content
+    assert "cite the filename" in content

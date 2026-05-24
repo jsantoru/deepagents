@@ -45,6 +45,8 @@ async def chat_stream(
     metrics_service = MetricsService(db_session)
 
     async def event_generator():
+        conversation = await metrics_service.prepare_chat(payload)
+        conversation_messages = await metrics_service.build_conversation_messages(conversation.id)
         queue: asyncio.Queue[tuple[str, object | None]] = asyncio.Queue()
 
         async def on_event(event: ChatTraceEvent) -> None:
@@ -52,10 +54,17 @@ async def chat_stream(
 
         async def run_agent() -> None:
             try:
-                response = await metrics_service.run_chat_stream(
-                    payload=payload,
-                    agent_service=agent_service,
-                    on_event=on_event,
+                started_at = asyncio.get_running_loop().time()
+                agent_result = await agent_service.stream_chat(
+                    payload,
+                    on_event,
+                    conversation_messages=conversation_messages,
+                )
+                latency_ms = int((asyncio.get_running_loop().time() - started_at) * 1000)
+                response = await metrics_service._finalize_chat(
+                    conversation.id,
+                    agent_result,
+                    latency_ms,
                 )
                 await queue.put(("final", response))
             except Exception as exc:
@@ -65,12 +74,54 @@ async def chat_stream(
 
         task = asyncio.create_task(run_agent())
 
+        # Buffer assistant_delta / tool_delta events and flush at most every 150 ms.
+        # This prevents one SSE round-trip per token and keeps React renders smooth.
+        FLUSH_INTERVAL = 0.15
+        delta_buffer: dict[str, tuple[ChatTraceEvent, str]] = {}  # id -> (template, content)
+
+        def drain_buffer() -> list[str]:
+            chunks: list[str] = []
+            for _id, (template, content) in delta_buffer.items():
+                if content:
+                    chunks.append(_format_sse("trace", ChatTraceEvent(
+                        id=template.id,
+                        type=template.type,
+                        title=template.title,
+                        content=content,
+                        metadata=template.metadata,
+                    )))
+            delta_buffer.clear()
+            return chunks
+
         try:
-            yield _format_sse("status", {"state": "started"})
+            yield _format_sse("status", {"state": "started", "conversation_id": conversation.id})
             while True:
-                event_type, data = await queue.get()
+                try:
+                    event_type, data = await asyncio.wait_for(
+                        queue.get(), timeout=FLUSH_INTERVAL
+                    )
+                except asyncio.TimeoutError:
+                    for chunk in drain_buffer():
+                        yield chunk
+                    continue
+
                 if event_type == "done":
+                    for chunk in drain_buffer():
+                        yield chunk
                     break
+
+                if event_type == "trace" and isinstance(data, ChatTraceEvent):
+                    if data.type in ("assistant_delta", "tool_delta"):
+                        if data.id in delta_buffer:
+                            tmpl, existing = delta_buffer[data.id]
+                            delta_buffer[data.id] = (tmpl, existing + data.content)
+                        else:
+                            delta_buffer[data.id] = (data, data.content)
+                        continue
+                    # Non-delta: flush buffer first to preserve event ordering
+                    for chunk in drain_buffer():
+                        yield chunk
+
                 yield _format_sse(event_type, data)
         finally:
             if not task.done():
