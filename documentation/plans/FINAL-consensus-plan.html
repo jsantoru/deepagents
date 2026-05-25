@@ -1,0 +1,1860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DeepAgents — Final Consensus Design Plan</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --bg-card: #161b27;
+      --bg-code: #1a1f2e;
+      --bg-code-block: #111520;
+      --border: #252d3d;
+      --text: #c9d1e0;
+      --text-muted: #6b7a99;
+      --text-heading: #e8edf5;
+      --accent: #4f8ef7;
+      --accent-dim: #2a4a8a;
+      --green: #3ecf6e;
+      --green-dim: #1a4030;
+      --yellow: #f5c842;
+      --yellow-dim: #3d3010;
+      --red: #f56565;
+      --red-dim: #3d1a1a;
+      --purple: #b88af8;
+      --purple-dim: #2d1a5a;
+      --tag-sql: #f5a742;
+      --tag-python: #4ec9b0;
+      --tag-json: #9cdcfe;
+      --tag-typescript: #4f8ef7;
+      --tag-bash: #ce9178;
+      --tag-plain: #6b7a99;
+      --radius: 8px;
+      --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", "Consolas", monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.7;
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ── Sidebar nav ── */
+    nav {
+      width: 268px;
+      min-width: 268px;
+      background: var(--bg-card);
+      border-right: 1px solid var(--border);
+      padding: 32px 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+
+    nav .nav-logo {
+      padding: 0 20px 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+    nav .nav-logo .nav-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-heading);
+      display: block;
+    }
+    nav .nav-logo .nav-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    nav h2 {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 12px 20px 6px;
+    }
+
+    nav ul { list-style: none; }
+
+    nav ul li a {
+      display: block;
+      padding: 5px 20px;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 12.5px;
+      line-height: 1.5;
+      border-left: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+
+    nav ul li a:hover {
+      color: var(--text);
+      background: rgba(79, 142, 247, 0.06);
+      border-left-color: var(--accent-dim);
+    }
+
+    nav ul li.section > a {
+      color: var(--text);
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    nav ul li.sub > a {
+      padding-left: 34px;
+      font-size: 12px;
+    }
+
+    nav .nav-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 10px 20px;
+    }
+
+    /* ── Main content ── */
+    main {
+      flex: 1;
+      min-width: 0;
+      padding: 48px 64px 96px;
+      max-width: 920px;
+    }
+
+    /* ── Typography ── */
+    h1 {
+      font-size: 30px;
+      font-weight: 700;
+      color: var(--text-heading);
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+      line-height: 1.25;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-bottom: 40px;
+      padding-bottom: 40px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-heading);
+      margin-top: 56px;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+      letter-spacing: -0.01em;
+    }
+
+    h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-heading);
+      margin-top: 32px;
+      margin-bottom: 12px;
+    }
+
+    h4 {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-top: 24px;
+      margin-bottom: 8px;
+      font-family: var(--font-mono);
+      letter-spacing: 0.01em;
+    }
+
+    p { margin-bottom: 14px; }
+
+    strong { color: var(--text-heading); font-weight: 600; }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Inline code ── */
+    code {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      color: #9cdcfe;
+      padding: 1px 5px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    /* ── Code blocks ── */
+    pre {
+      background: var(--bg-code-block);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      overflow-x: auto;
+      margin: 16px 0 20px;
+      position: relative;
+    }
+
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 13px;
+      color: var(--text);
+      white-space: pre;
+      line-height: 1.6;
+    }
+
+    .lang-tag {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-family: var(--font-mono);
+      opacity: 0.55;
+    }
+
+    pre.sql .lang-tag     { color: var(--tag-sql); }
+    pre.python .lang-tag  { color: var(--tag-python); }
+    pre.json .lang-tag    { color: var(--tag-json); }
+    pre.typescript .lang-tag { color: var(--tag-typescript); }
+    pre.bash .lang-tag    { color: var(--tag-bash); }
+    pre.plain .lang-tag   { color: var(--tag-plain); }
+
+    /* Syntax coloring */
+    .kw  { color: #569cd6; }
+    .ty  { color: #4ec9b0; }
+    .cm  { color: #6a737d; font-style: italic; }
+    .st  { color: #ce9178; }
+    .fn  { color: #dcdcaa; }
+    .co  { color: #b5cea8; }
+    .op  { color: #d4d4d4; }
+    .py-kw  { color: #c586c0; }
+    .py-bi  { color: #4ec9b0; }
+    .py-de  { color: #dcdcaa; }
+    .py-cm  { color: #6a737d; font-style: italic; }
+    .py-st  { color: #ce9178; }
+    .py-co  { color: #b5cea8; }
+    .py-dc  { color: #569cd6; }
+    .ts-kw  { color: #c586c0; }
+    .ts-ty  { color: #4ec9b0; }
+    .ts-fn  { color: #dcdcaa; }
+    .ts-st  { color: #ce9178; }
+    .ts-cm  { color: #6a737d; font-style: italic; }
+    .ts-co  { color: #b5cea8; }
+
+    /* ── Lists ── */
+    ul, ol { padding-left: 24px; margin-bottom: 14px; }
+    li { margin-bottom: 5px; }
+
+    /* Principles cards */
+    ul.cards { list-style: none; padding: 0; }
+    ul.cards li {
+      display: flex;
+      gap: 12px;
+      padding: 10px 14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 8px;
+      align-items: flex-start;
+      font-size: 14px;
+    }
+    ul.cards li .num {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+      background: var(--accent-dim);
+      border-radius: 4px;
+      padding: 2px 7px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    ul.cards li.green .num { color: var(--green); background: var(--green-dim); }
+
+    /* ── Tables ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0 20px;
+      font-size: 13.5px;
+    }
+
+    th {
+      text-align: left;
+      padding: 8px 14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-heading);
+      font-weight: 600;
+      font-size: 11.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    td {
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    tr:hover td { background: rgba(79, 142, 247, 0.03); }
+
+    /* ── Callout boxes ── */
+    .callout {
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      margin: 20px 0;
+      border-left: 3px solid;
+      font-size: 14px;
+    }
+    .callout.blue  { background: rgba(79,142,247,0.07); border-color: var(--accent); }
+    .callout.green { background: rgba(62,207,110,0.07); border-color: var(--green); }
+    .callout.yellow { background: rgba(245,200,66,0.07); border-color: var(--yellow); }
+    .callout p:last-child { margin-bottom: 0; }
+    .callout strong { display: block; margin-bottom: 4px; }
+
+    /* ── Endpoint cards ── */
+    .endpoint {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin: 12px 0;
+      overflow: hidden;
+    }
+    .endpoint-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .method {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    .method.get    { background: rgba(62,207,110,0.15); color: var(--green); }
+    .method.post   { background: rgba(79,142,247,0.15); color: var(--accent); }
+    .method.delete { background: rgba(245,101,101,0.15); color: var(--red); }
+    .endpoint-path {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--text-heading);
+    }
+    .endpoint-status {
+      margin-left: auto;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .endpoint-body { padding: 14px 16px; font-size: 14px; }
+
+    /* ── Status badge ── */
+    .badge {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    .badge.pending  { background: var(--yellow-dim); color: var(--yellow); }
+    .badge.running  { background: rgba(79,142,247,0.15); color: var(--accent); }
+    .badge.done     { background: var(--green-dim); color: var(--green); }
+    .badge.failed   { background: var(--red-dim); color: var(--red); }
+    .badge.cancel   { background: var(--purple-dim); color: var(--purple); }
+
+    /* ── Phase chips ── */
+    .phase-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 20px 0 28px;
+    }
+    .phase-chip {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 18px;
+      flex: 1;
+      min-width: 140px;
+    }
+    .phase-chip .phase-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .phase-chip .phase-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-heading);
+    }
+    .phase-chip.p1 { border-color: var(--accent-dim); background: rgba(79,142,247,0.05); }
+    .phase-chip.p2 { border-color: var(--purple-dim); background: rgba(184,138,248,0.05); }
+    .phase-chip.p1 .phase-label { color: var(--accent); }
+    .phase-chip.p2 .phase-label { color: var(--purple); }
+
+    /* ── Mermaid diagrams ── */
+    .mermaid-wrap {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin: 20px 0;
+      overflow-x: auto;
+      text-align: center;
+    }
+
+    .mermaid { display: inline-block; }
+
+    /* ── Two-column layout for zoom sections ── */
+    .zoom-label {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: var(--accent-dim);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-bottom: 8px;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 48px 0;
+    }
+
+    /* ── Decision table ── */
+    .decision-table td:nth-child(4) {
+      color: var(--green);
+      font-weight: 600;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<!-- ─────────────── Sidebar ─────────────── -->
+<nav>
+  <div class="nav-logo">
+    <span class="nav-title">DeepAgents</span>
+    <span class="nav-sub">Final Consensus Plan · 2026-05-24</span>
+  </div>
+
+  <h2>Overview</h2>
+  <ul>
+    <li class="section"><a href="#philosophy">Philosophy</a></li>
+    <li class="section"><a href="#shape">System Shape</a></li>
+    <li class="section"><a href="#principles">Core Principles</a></li>
+    <li class="section"><a href="#kiss">Keep It Simple Rules</a></li>
+    <li class="section"><a href="#mvp">Minimum Viable P1</a></li>
+  </ul>
+
+  <div class="nav-divider"></div>
+  <h2>Zoom In</h2>
+  <ul>
+    <li class="section"><a href="#zoom1">Zoom 1: Request Flow</a></li>
+    <li class="sub"><a href="#zoom1-p1">Phase 1 — REST + Polling</a></li>
+    <li class="sub"><a href="#zoom1-p2">Phase 2 — SSE Stream</a></li>
+    <li class="section"><a href="#zoom2">Zoom 2: Domain Model</a></li>
+    <li class="section"><a href="#zoom3">Zoom 3: Run Lifecycle</a></li>
+    <li class="section"><a href="#zoom4">Zoom 4: API Surface</a></li>
+    <li class="sub"><a href="#api-conversations">Conversations</a></li>
+    <li class="sub"><a href="#api-turns">Turns</a></li>
+    <li class="sub"><a href="#api-runs">Runs</a></li>
+    <li class="sub"><a href="#api-events">Events</a></li>
+    <li class="sub"><a href="#api-admin">Admin</a></li>
+    <li class="section"><a href="#zoom5">Zoom 5: Event Model</a></li>
+    <li class="section"><a href="#zoom6">Zoom 6: Implementation</a></li>
+    <li class="sub"><a href="#schema">Database Schema</a></li>
+    <li class="sub"><a href="#executor">Executor</a></li>
+    <li class="sub"><a href="#adapter">AgentAdapter</a></li>
+    <li class="sub"><a href="#sse-impl">SSE Implementation</a></li>
+    <li class="sub"><a href="#frontend-hooks">Frontend Hooks</a></li>
+  </ul>
+
+  <div class="nav-divider"></div>
+  <h2>Delivery</h2>
+  <ul>
+    <li class="section"><a href="#layout">Module Layout</a></li>
+    <li class="section"><a href="#config">Configuration</a></li>
+    <li class="section"><a href="#recovery">Startup Recovery</a></li>
+    <li class="section"><a href="#phases">Phase Breakdown</a></li>
+    <li class="section"><a href="#testing">Testing Strategy</a></li>
+    <li class="section"><a href="#observability">Observability</a></li>
+    <li class="section"><a href="#migration">Migration</a></li>
+    <li class="section"><a href="#success">Success Criteria</a></li>
+  </ul>
+</nav>
+
+<!-- ─────────────── Main ─────────────── -->
+<main>
+
+  <h1>DeepAgents — Final Consensus Design Plan</h1>
+  <p class="subtitle">Synthesized from the Claude and Codex revised plans. This is the canonical reference going forward.</p>
+
+  <!-- ── Philosophy ── -->
+  <section id="philosophy">
+    <h2>Philosophy</h2>
+    <p><strong>Execution is primary. Delivery is a projection.</strong></p>
+    <p>A run exists independently of any HTTP connection. The event log is the append-only source of truth. SSE, added in Phase 2, is a streaming read of that log — a new connection replays from cursor 0, a reconnect replays from the last known cursor. The code path is identical.</p>
+    <p>The HTTP layer creates durable intent and serves reads. It never owns execution.</p>
+
+    <table>
+      <thead><tr><th>Role</th><th>Responsibility</th></tr></thead>
+      <tbody>
+        <tr><td><strong>API service</strong></td><td>Accepts commands, validates auth, serves read models. Phase 2: also serves SSE streams.</td></tr>
+        <tr><td><strong>Executor</strong></td><td>Claims pending runs, invokes the agent, appends events, finalizes outcomes.</td></tr>
+        <tr><td><strong>PostgreSQL</strong></td><td>Stores all durable domain state and the event log. Phase 2: wakes SSE via <code>LISTEN/NOTIFY</code>.</td></tr>
+        <tr><td><strong>Clients</strong></td><td>Phase 1: scripts, tests, curl. Phase 2: web UI.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ── System Shape ── -->
+  <section id="shape">
+    <h2>High-Level System Shape</h2>
+
+    <div class="mermaid-wrap">
+      <div class="mermaid">
+flowchart LR
+    C1["Phase 1 clients\ncurl · tests · scripts"] --> API
+    C2["Phase 2 UI\nREST + SSE"] --> API
+    API["API Service\nvalidate · store · serve"] --> DB
+    EX["Executor\nclaim · run · finalize"] --> DB
+    EX --> AG["AgentAdapter\ndeepagents + tools"]
+    AG --> EX
+    API -. "Phase 2 only\nLISTEN/NOTIFY wakeups" .-> DB
+    DB[("PostgreSQL\ndurable state\nevent log")]
+      </div>
+    </div>
+
+    <p>Four roles, deliberately small. Clients submit work; the API stores intent; the executor performs work; PostgreSQL holds all state. No role crosses into another's domain.</p>
+  </section>
+
+  <!-- ── Core Principles ── -->
+  <section id="principles">
+    <h2>Core Principles</h2>
+
+    <ul class="cards">
+      <li><span class="num">1</span><span>Append-only event log is the single source of truth. No <code>trace_data</code> JSON columns. No duplicate event storage. One table: <code>run_events</code>.</span></li>
+      <li><span class="num">2</span><span><strong>Turn and Run are separate concepts.</strong> A turn is the user's submission. A run is one execution attempt. Retries create a new run for the same turn without mutating history.</span></li>
+      <li><span class="num">3</span><span><strong>DB-generated sequence.</strong> <code>run_events.id</code> is <code>BIGSERIAL</code> — monotonically increasing, DB-assigned. No <code>max(sequence) + 1</code> race in application code.</span></li>
+      <li><span class="num">4</span><span><strong>HTTP never owns execution.</strong> Requests enqueue work and read results. The executor writes state. Disconnecting a client changes nothing.</span></li>
+      <li><span class="num">5</span><span><strong>Cancellation is a DB column.</strong> <code>runs.cancel_requested BOOLEAN</code> — multi-process safe, no Redis, no in-memory sets.</span></li>
+      <li><span class="num">6</span><span><strong>Auth from Phase 1.</strong> Static bearer token minimum. No unauthenticated admin endpoints that expose cost or trace data.</span></li>
+      <li><span class="num">7</span><span><strong>Alembic from day one.</strong> <code>create_all()</code> does not exist in the production path. Migrations are version-controlled and run in the Docker entrypoint.</span></li>
+      <li><span class="num">8</span><span><strong>Fail fast on misconfiguration.</strong> Missing secrets abort startup via <code>pydantic-settings</code> field validation.</span></li>
+      <li><span class="num">9</span><span><strong>One stable event envelope.</strong> Same JSON shape for polling (Phase 1) and SSE streaming (Phase 2).</span></li>
+      <li><span class="num">10</span><span><strong>Phase 1 has no SSE.</strong> Clients poll <code>GET /runs/{id}/events?after_id=N</code>. SSE is a Phase 2 upgrade to the same endpoint family.</span></li>
+    </ul>
+  </section>
+
+  <!-- ── Keep It Simple ── -->
+  <section id="kiss">
+    <h2>Keep It Simple Rules</h2>
+    <p>These guard rails govern every decision that has a tempting "more general" path:</p>
+
+    <ul class="cards">
+      <li class="green"><span class="num">1</span><span>Build Phase 1 without a frontend.</span></li>
+      <li class="green"><span class="num">2</span><span>Build Phase 1 without SSE.</span></li>
+      <li class="green"><span class="num">3</span><span>PostgreSQL is the only coordination dependency.</span></li>
+      <li class="green"><span class="num">4</span><span>One event table is the trace source of truth.</span></li>
+      <li class="green"><span class="num">5</span><span><code>run_events.id</code> is the cursor. No application-generated sequence.</span></li>
+      <li class="green"><span class="num">6</span><span>One active run per conversation in Phase 1.</span></li>
+      <li class="green"><span class="num">7</span><span>Keep the executor in-process; structure the seam so it can move out later without API changes.</span></li>
+      <li class="green"><span class="num">8</span><span>Prefer explicit SQL read queries over premature read-model tables.</span></li>
+      <li class="green"><span class="num">9</span><span>Final answer lives on <code>turns.answer</code> — no separate artifacts table in Phase 1.</span></li>
+      <li class="green"><span class="num">10</span><span>Do not add Redis, Celery, WebSockets, vector memory, or multi-tenant billing in the first pass.</span></li>
+    </ul>
+  </section>
+
+  <!-- ── MVP ── -->
+  <section id="mvp">
+    <h2>Minimum Viable Phase 1</h2>
+    <p>The smallest useful version in seven steps:</p>
+
+    <div class="mermaid-wrap">
+      <div class="mermaid">
+flowchart TD
+    A["POST /conversations"] --> B["POST /conversations/{id}/turns"]
+    B --> C["Return 202 + run_id"]
+    C --> D["Executor runs agent"]
+    D --> E["Append run_events"]
+    E --> F["Client polls GET /runs/{id}/events"]
+    D --> G["Write turns.answer + metrics"]
+    G --> H["Client reads GET /turns/{id}"]
+      </div>
+    </div>
+
+    <p><strong>Required in the first pass:</strong> Alembic schema, fail-fast settings, stub adapter for tests, real adapter, event polling endpoint, startup recovery.</p>
+    <p><strong>Allowed to defer:</strong> SSE, browser UI, generated TypeScript types, distributed worker, lease-based recovery, event batching.</p>
+
+    <div class="callout blue">
+      <strong>Acceptance gate</strong>
+      A run must complete correctly with no browser connected before moving to Phase 1B.
+    </div>
+  </section>
+
+  <hr>
+
+  <!-- ── Zoom 1 ── -->
+  <section id="zoom1">
+    <span class="zoom-label">Zoom 1</span>
+    <h2>Request Flow</h2>
+
+    <h3 id="zoom1-p1">Phase 1 — REST + Polling</h3>
+
+    <div class="mermaid-wrap">
+      <div class="mermaid">
+sequenceDiagram
+    participant C as Client
+    participant A as API
+    participant D as PostgreSQL
+    participant E as Executor
+    participant G as AgentAdapter
+
+    C->>A: POST /conversations
+    A->>D: insert conversation
+    A-->>C: { id }
+
+    C->>A: POST /conversations/{id}/turns
+    A->>D: FOR UPDATE lock, assign position
+    A->>D: insert turn + attachments + run
+    A-->>C: 202 { turn_id, run_id, status pending }
+
+    E->>D: SELECT FOR UPDATE SKIP LOCKED → claim run
+    E->>D: append run.started event
+    E->>G: execute agent
+    G-->>E: normalized events via on_event()
+    E->>D: append run_events
+    E->>D: write turns.answer + update runs + append run.completed
+
+    C->>A: GET /runs/{id}/events?after_id=N
+    A->>D: SELECT WHERE run_id=? AND id > N
+    A-->>C: { events, run_status, next_after_id }
+
+    C->>A: GET /turns/{id} (after terminal status)
+    A-->>C: { answer, metrics }
+      </div>
+    </div>
+
+    <h3 id="zoom1-p2">Phase 2 — SSE Stream Upgrade</h3>
+    <p>Same execution, same event table. Only the delivery path changes.</p>
+
+    <div class="mermaid-wrap">
+      <div class="mermaid">
+sequenceDiagram
+    participant UI as UI
+    participant A as SSE Endpoint
+    participant D as PostgreSQL
+    participant E as Executor
+
+    UI->>A: GET /runs/{id}/events/stream?after_id=N
+    A->>D: replay events after N
+    A-->>UI: run_event messages (replay)
+    A->>D: LISTEN run_{run_id}
+
+    E->>D: INSERT run_event
+    E->>D: pg_notify run_{run_id}
+    D-->>A: wakeup notification
+    A->>D: SELECT new events
+    A-->>UI: run_event messages (live)
+
+    E->>D: mark run completed
+    E->>D: pg_notify run_{run_id}
+    A->>D: check run status → terminal
+    A-->>UI: event: done  data: {status: completed}
+
+    UI->>A: GET /turns/{id} (fetch final answer)
+    A-->>UI: { answer, metrics }
+      </div>
+    </div>
+
+    <div class="callout green">
+      <strong>Key invariant</strong>
+      Notifications are wakeups only. The SSE handler always reads events from the database before emitting. The database is the source of truth, never the notification payload.
+    </div>
+  </section>
+
+  <!-- ── Zoom 2 ── -->
+  <section id="zoom2">
+    <span class="zoom-label">Zoom 2</span>
+    <h2>Domain Model</h2>
+
+    <div class="mermaid-wrap">
+      <div class="mermaid">
+erDiagram
+    conversations ||--o{ turns : contains
+    turns ||--o{ attachments : has
+    turns ||--o{ runs : attempts
+    runs ||--o{ run_events : emits
+
+    conversations {
+        uuid id PK
+        timestamptz created_at
+    }
+
+    turns {
+        uuid id PK
+        uuid conversation_id FK
+        int position
+        text user_message
+        text answer "NULL until run completes"
+        text research_mode
+        timestamptz created_at
+    }
+
+    attachments {
+        uuid id PK
+        uuid turn_id FK
+        int position
+        text name
+        text mime_type
+        int size_bytes
+        text sha256
+        text content
+    }
+
+    runs {
+        uuid id PK
+        uuid turn_id FK
+        uuid conversation_id FK
+        int attempt
+        text status
+        boolean cancel_requested
+        int timeout_seconds
+        text model_name
+        int input_tokens
+        int output_tokens
+        int total_tokens
+        int search_calls
+        int latency_ms
+        numeric cost_usd
+        text error_message
+        timestamptz created_at
+        timestamptz started_at
+        timestamptz completed_at
+    }
+
+    run_events {
+        bigint id PK "BIGSERIAL global cursor"
+        uuid run_id FK
+        text type
+        int schema_version
+        jsonb payload
+        timestamptz created_at
+    }
+      </div>
+    </div>
+
+    <table>
+      <thead><tr><th>Table</th><th>Purpose</th><th>Key design decision</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>conversations</code></td>
+          <td>Durable thread container</td>
+          <td>Minimal — no title column. Title is derived from first turn's <code>user_message</code> at read time.</td>
+        </tr>
+        <tr>
+          <td><code>turns</code></td>
+          <td>User submission, stable across retries</td>
+          <td><code>answer TEXT</code> written by executor on completion. One query to display conversation history — no join to runs needed.</td>
+        </tr>
+        <tr>
+          <td><code>attachments</code></td>
+          <td>Files submitted with a turn</td>
+          <td>Belong to the <em>turn</em>, not the run. Same attachments are available to all retry attempts.</td>
+        </tr>
+        <tr>
+          <td><code>runs</code></td>
+          <td>One execution attempt per turn</td>
+          <td><code>attempt INTEGER</code> supports retry. <code>cancel_requested BOOLEAN</code> for cooperative cancellation. Metrics stored inline (no separate metrics table).</td>
+        </tr>
+        <tr>
+          <td><code>run_events</code></td>
+          <td>Append-only canonical trace</td>
+          <td><code>id BIGSERIAL</code> is DB-assigned — no application sequence race. Pagination always uses <code>WHERE run_id = ? AND id &gt; cursor ORDER BY id</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ── Zoom 3 ── -->
+  <section id="zoom3">
+    <span class="zoom-label">Zoom 3</span>
+    <h2>Run Lifecycle</h2>
+
+    <div class="mermaid-wrap">
+      <div class="mermaid">
+stateDiagram-v2
+    [*] --> pending
+    pending --> claimed : executor claims
+    claimed --> running : agent starts
+    running --> completed : success
+    running --> failed : unhandled exception
+    running --> timed_out : asyncio.timeout fires
+    running --> cancel_requested : API sets flag
+    pending --> cancel_requested : API sets flag before claim
+    cancel_requested --> cancelled : executor observes flag
+    claimed --> failed : error before start
+    completed --> [*]
+    failed --> [*]
+    timed_out --> [*]
+    cancelled --> [*]
+      </div>
+    </div>
+
+    <table>
+      <thead><tr><th>Status</th><th>Meaning</th><th>Owner</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge pending">pending</span></td><td>Created, not yet claimed</td><td>API writes; executor reads</td></tr>
+        <tr><td><span class="badge running">claimed</span></td><td>Executor picked it up; agent not yet started. Prevents double-claim.</td><td>Executor</td></tr>
+        <tr><td><span class="badge running">running</span></td><td>Agent is actively executing</td><td>Executor</td></tr>
+        <tr><td><span class="badge done">completed</span></td><td>Agent finished; <code>turns.answer</code> is written</td><td>Executor</td></tr>
+        <tr><td><span class="badge failed">failed</span></td><td>Unhandled exception; <code>error_message</code> set</td><td>Executor</td></tr>
+        <tr><td><span class="badge failed">timed_out</span></td><td><code>asyncio.timeout</code> fired; run exceeded limit</td><td>Executor</td></tr>
+        <tr><td><span class="badge cancel">cancel_requested</span></td><td>API set <code>cancel_requested = true</code>; executor has not yet observed it</td><td>API writes; executor polls</td></tr>
+        <tr><td><span class="badge cancel">cancelled</span></td><td>Executor observed flag, stopped cleanly</td><td>Executor</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout yellow">
+      <strong>Cancellation is cooperative</strong>
+      The API sets <code>runs.cancel_requested = true</code>. The executor checks this flag inside <code>persist_and_notify()</code> after every event insert. At the next yield point it raises <code>asyncio.CancelledError</code>, which is caught and transitions the run to <code>cancelled</code>. Any process that writes the flag will stop execution — no in-memory channel needed.
+    </div>
+  </section>
+
+  <!-- ── Zoom 4 ── -->
+  <section id="zoom4">
+    <span class="zoom-label">Zoom 4</span>
+    <h2>API Surface</h2>
+
+    <p>Base path: <code>/api/v1</code>. All non-health endpoints require <code>Authorization: Bearer &lt;token&gt;</code>.</p>
+
+    <h3>Error envelope</h3>
+    <pre class="json"><code><span class="lang-tag">json</span>{
+    <span class="st">"error"</span>: <span class="st">"run_not_found"</span>,
+    <span class="st">"message"</span>: <span class="st">"Run abc123 does not exist."</span>,
+    <span class="st">"status"</span>: <span class="co">404</span>
+}</code></pre>
+    <p>Standard codes: <code>not_found</code>, <code>conflict</code>, <code>validation_error</code>, <code>unauthorized</code>, <code>internal_error</code>.</p>
+
+    <!-- Conversations -->
+    <h3 id="api-conversations">Conversations</h3>
+
+    <div class="endpoint">
+      <div class="endpoint-header">
+        <span class="method post">POST</span>
+        <span class="endpoint-path">/conversations</span>
+        <span class="endpoint-status">201 Created</span>
+      </div>
+      <div class="endpoint-body">
+        <p>Create a conversation. No body required.</p>
+        <pre class="json"><code><span class="lang-tag">json</span>{ <span class="st">"id"</span>: <span class="st">"uuid"</span>, <span class="st">"created_at"</span>: <span class="st">"2026-05-24T10:00:00Z"</span> }</code></pre>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <div class="endpoint-header">
+        <span class="method get">GET</span>
+        <span class="endpoint-path">/conversations?limit=50&amp;before=&lt;cursor&gt;</span>
+        <span class="endpoint-status">200 OK</span>
+      </div>
+      <div class="endpoint-body">
+        <p>List conversations, most-recently-active first. Implemented as two queries — one for conversations, one <code>SELECT DISTINCT ON (conversation_id)</code> for active runs. Not N+1.</p>
+        <pre class="json"><code><span class="lang-tag">json</span>{
+    <span class="st">"conversations"</span>: [
+        {
+            <span class="st">"id"</span>: <span class="st">"uuid"</span>,
+            <span class="st">"title"</span>: <span class="st">"Compare the latest US inflation..."</span>,
+            <span class="st">"preview"</span>: <span class="st">"Based on current data..."</span>,
+            <span class="st">"turn_count"</span>: <span class="co">3</span>,
+            <span class="st">"last_turn_at"</span>: <span class="st">"2026-05-24T10:01:00Z"</span>,
+            <span class="st">"active_run"</span>: { <span class="st">"id"</span>: <span class="st">"uuid"</span>, <span class="st">"status"</span>: <span class="st">"running"</span> }
+        }
+    ],
+    <span class="st">"next_cursor"</span>: <span class="kw">null</span>
+}</code></pre>
+        <p><code>active_run</code> is non-null when any run for the conversation is <code>pending</code>, <code>claimed</code>, <code>running</code>, or <code>cancel_requested</code>.</p>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <div class="endpoint-header">
+        <span class="method get">GET</span>
+        <span class="endpoint-path">/conversations/{id}</span>
+        <span class="endpoint-status">200 OK</span>
+      </div>
+      <div class="endpoint-body">
+        <p>Full detail with all turns and latest run summaries. Events are <strong>not</strong> included — fetch separately via the events endpoint. Keeps response size bounded.</p>
+        <pre class="json"><code><span class="lang-tag">json</span>{
+    <span class="st">"id"</span>: <span class="st">"uuid"</span>,
+    <span class="st">"created_at"</span>: <span class="st">"..."</span>,
+    <span class="st">"title"</span>: <span class="st">"Compare the latest US inflation..."</span>,
+    <span class="st">"turns"</span>: [
+        {
+            <span class="st">"id"</span>: <span class="st">"uuid"</span>,
+            <span class="st">"position"</span>: <span class="co">1</span>,
+            <span class="st">"user_message"</span>: <span class="st">"..."</span>,
+            <span class="st">"answer"</span>: <span class="st">"# Macroeconomic Indicators..."</span>,
+            <span class="st">"attachments"</span>: [],
+            <span class="st">"latest_run"</span>: {
+                <span class="st">"id"</span>: <span class="st">"uuid"</span>,
+                <span class="st">"attempt"</span>: <span class="co">1</span>,
+                <span class="st">"status"</span>: <span class="st">"completed"</span>,
+                <span class="st">"metrics"</span>: {
+                    <span class="st">"model_name"</span>: <span class="st">"openai:gpt-5-nano"</span>,
+                    <span class="st">"latency_ms"</span>: <span class="co">34200</span>,
+                    <span class="st">"total_tokens"</span>: <span class="co">2760</span>,
+                    <span class="st">"search_calls"</span>: <span class="co">4</span>,
+                    <span class="st">"cost_usd"</span>: <span class="co">0.000506</span>
+                }
+            }
+        }
+    ],
+    <span class="st">"active_run"</span>: <span class="kw">null</span>
+}</code></pre>
+      </div>
+    </div>
+
+    <!-- Turns -->
+    <h3 id="api-turns">Turns</h3>
+
+    <div class="endpoint">
+      <div class="endpoint-header">
+        <span class="method post">POST</span>
+        <span class="endpoint-path">/conversations/{id}/turns</span>
+        <span class="endpoint-status">202 Accepted</span>
+      </div>
+      <div class="endpoint-body">
+        <p>Create a turn and enqueue the first run. Returns immediately — the run is queued, not started.</p>
+        <pre class="json"><code><span class="lang-tag">request</span>{
+    <span class="st">"message"</span>: <span class="st">"Research the latest changes."</span>,
+    <span class="st">"research_mode"</span>: <span class="st">"standard"</span>,
+    <span class="st">"attachments"</span>: [
+        {
+            <span class="st">"name"</span>: <span class="st">"notes.txt"</span>,
+            <span class="st">"mime_type"</span>: <span class="st">"text/plain"</span>,
+            <span class="st">"size_bytes"</span>: <span class="co">4821</span>,
+            <span class="st">"content"</span>: <span class="st">"Full UTF-8 text..."</span>
+        }
+    ]
+}</code></pre>
+        <p>Attachment constraints: max 6 files, max 200,000 bytes each, max 600,000 bytes total.</p>
+        <pre class="json"><code><span class="lang-tag">202</span>{
+    <span class="st">"turn_id"</span>: <span class="st">"uuid"</span>,
+    <span class="st">"run_id"</span>: <span class="st">"uuid"</span>,
+    <span class="st">"conversation_id"</span>: <span class="st">"uuid"</span>,
+    <span class="st">"position"</span>: <span class="co">2</span>,
+    <span class="st">"status"</span>: <span class="st">"pending"</span>,
+    <span class="st">"research_mode"</span>: <span class="st">"standard"</span>,
+    <span class="st">"created_at"</span>: <span class="st">"2026-05-24T10:01:00Z"</span>
+}</code></pre>
+
+        <p><strong>Side effects (one transaction):</strong></p>
+        <ol>
+          <li><code>SELECT ... FOR UPDATE</code> on conversation — prevents duplicate position assignment</li>
+          <li>Validate no other run in this conversation is non-terminal (<code>409</code> if conflict)</li>
+          <li>Assign <code>position = COALESCE(MAX(position), 0) + 1</code></li>
+          <li>Insert turn + attachments + run with <code>status = 'pending'</code></li>
+          <li>Commit, then signal executor (out of transaction)</li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <div class="endpoint-header">
+        <span class="method get">GET</span>
+        <span class="endpoint-path">/turns/{id}</span>
+        <span class="endpoint-status">200 OK</span>
+      </div>
+      <div class="endpoint-body">
+        <p>Single turn with all run attempts listed, most recent first. Primary read after a run completes — the caller reads <code>turn.answer</code> here.</p>
+        <pre class="json"><code><span class="lang-tag">json</span>{
+    <span class="st">"id"</span>: <span class="st">"uuid"</span>, <span class="st">"position"</span>: <span class="co">2</span>,
+    <span class="st">"user_message"</span>: <span class="st">"..."</span>,
+    <span class="st">"answer"</span>: <span class="st">"string or null"</span>,
+    <span class="st">"attachments"</span>: [],
+    <span class="st">"runs"</span>: [
+        { <span class="st">"id"</span>: <span class="st">"uuid"</span>, <span class="st">"attempt"</span>: <span class="co">2</span>, <span class="st">"status"</span>: <span class="st">"completed"</span>, <span class="st">"metrics"</span>: { <span class="st">"..."</span>: <span class="st">"..."</span> } },
+        { <span class="st">"id"</span>: <span class="st">"uuid"</span>, <span class="st">"attempt"</span>: <span class="co">1</span>, <span class="st">"status"</span>: <span class="st">"failed"</span>, <span class="st">"error_message"</span>: <span class="st">"..."</span> }
+    ]
+}</code></pre>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <div class="endpoint-header">
+        <span class="method post">POST</span>
+        <span class="endpoint-path">/turns/{id}/retry</span>
+        <span class="endpoint-status">202 Accepted</span>
+      </div>
+      <div class="endpoint-body">
+        <p>Create a new run attempt for the same turn. Rejected with <code>409</code> if the latest run is non-terminal.</p>
+        <pre class="json"><code><span class="lang-tag">202</span>{ <span class="st">"run_id"</span>: <span class="st">"uuid"</span>, <span class="st">"turn_id"</span>: <span class="st">"uuid"</span>, <span class="st">"attempt"</span>: <span class="co">2</span>, <span class="st">"status"</span>: <span class="st">"pending"</span> }</code></pre>
+      </div>
+    </div>
+
+    <!-- Runs -->
+    <h3 id="api-runs">Runs</h3>
+
+    <div class="endpoint">
+      <div class="endpoint-header">
+        <span class="method get">GET</span>
+        <span class="endpoint-path">/runs/{id}</span>
+        <span class="endpoint-status">200 OK</span>
+      </div>
+      <div class="endpoint-body">
+        <p>Full run detail: status, metrics, timestamps, error.</p>
+        <pre class="json"><code><span class="lang-tag">json</span>{
+    <span class="st">"id"</span>: <span class="st">"uuid"</span>, <span class="st">"turn_id"</span>: <span class="st">"uuid"</span>, <span class="st">"conversation_id"</span>: <span class="st">"uuid"</span>,
+    <span class="st">"attempt"</span>: <span class="co">1</span>, <span class="st">"status"</span>: <span class="st">"completed"</span>, <span class="st">"research_mode"</span>: <span class="st">"standard"</span>,
+    <span class="st">"metrics"</span>: {
+        <span class="st">"model_name"</span>: <span class="st">"openai:gpt-5-nano"</span>,
+        <span class="st">"latency_ms"</span>: <span class="co">34200</span>,
+        <span class="st">"input_tokens"</span>: <span class="co">1840</span>, <span class="st">"output_tokens"</span>: <span class="co">920</span>, <span class="st">"total_tokens"</span>: <span class="co">2760</span>,
+        <span class="st">"search_calls"</span>: <span class="co">4</span>, <span class="st">"cost_usd"</span>: <span class="co">0.000506</span>
+    },
+    <span class="st">"error_message"</span>: <span class="kw">null</span>,
+    <span class="st">"created_at"</span>: <span class="st">"..."</span>, <span class="st">"started_at"</span>: <span class="st">"..."</span>, <span class="st">"completed_at"</span>: <span class="st">"..."</span>
+}</code></pre>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <div class="endpoint-header">
+        <span class="method post">POST</span>
+        <span class="endpoint-path">/runs/{id}/cancel</span>
+        <span class="endpoint-status">200 OK</span>
+      </div>
+      <div class="endpoint-body">
+        <p>Sets <code>cancel_requested = true</code>. The executor observes the flag cooperatively and transitions to <code>cancelled</code>. No-ops gracefully if the run is already terminal.</p>
+        <pre class="json"><code><span class="lang-tag">json</span>{ <span class="st">"run_id"</span>: <span class="st">"uuid"</span>, <span class="st">"status"</span>: <span class="st">"cancel_requested"</span> }</code></pre>
+      </div>
+    </div>
+
+    <!-- Events -->
+    <h3 id="api-events">Events</h3>
+
+    <div class="endpoint">
+      <div class="endpoint-header">
+        <span class="method get">GET</span>
+        <span class="endpoint-path">/runs/{id}/events?after_id=0&amp;limit=100</span>
+        <span class="endpoint-status">200 OK · Phase 1</span>
+      </div>
+      <div class="endpoint-body">
+        <p>Cursor-paginated event log as JSON. Used for polling in Phase 1 and for history replay in Phase 2.</p>
+        <pre class="json"><code><span class="lang-tag">json</span>{
+    <span class="st">"events"</span>: [
+        {
+            <span class="st">"id"</span>: <span class="co">143</span>,
+            <span class="st">"run_id"</span>: <span class="st">"uuid"</span>,
+            <span class="st">"type"</span>: <span class="st">"search_call"</span>,
+            <span class="st">"schema_version"</span>: <span class="co">1</span>,
+            <span class="st">"payload"</span>: { <span class="st">"query"</span>: <span class="st">"US CPI June 2026"</span> },
+            <span class="st">"created_at"</span>: <span class="st">"2026-05-24T10:01:05Z"</span>
+        }
+    ],
+    <span class="st">"run_status"</span>: <span class="st">"running"</span>,
+    <span class="st">"next_after_id"</span>: <span class="co">143</span>,
+    <span class="st">"has_more"</span>: <span class="kw">false</span>
+}</code></pre>
+        <p>Poll every 1–2 seconds while <code>run_status</code> is active. Stop when terminal and <code>has_more</code> is false.</p>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <div class="endpoint-header">
+        <span class="method get">GET</span>
+        <span class="endpoint-path">/runs/{id}/events/stream?after_id=0</span>
+        <span class="endpoint-status">200 OK · Phase 2 SSE</span>
+      </div>
+      <div class="endpoint-body">
+        <p>Server-Sent Events stream. Replays history then tails live events. Closes with a <code>done</code> control event when the run reaches a terminal status.</p>
+        <pre class="plain"><code><span class="lang-tag">sse</span>id: 142
+event: run_event
+data: {"id":142,"type":"thinking","payload":{"content":"Found 4 sources..."}}
+
+id: 143
+event: run_event
+data: {"id":143,"type":"search_call","payload":{"query":"US CPI June 2026"}}
+
+event: done
+data: {"status":"completed"}</code></pre>
+        <p>The <code>id:</code> field enables native <code>EventSource</code> reconnection via <code>Last-Event-ID</code>. Reconnect replays from the last received event — no custom logic needed.</p>
+      </div>
+    </div>
+
+    <!-- Admin -->
+    <h3 id="api-admin">Admin</h3>
+    <table>
+      <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><span class="method get" style="padding:2px 6px;font-size:11px;font-family:var(--font-mono)">GET</span></td><td><code>/admin/overview</code></td><td>Aggregate metrics: conversations, turns, runs, tokens, cost</td></tr>
+        <tr><td><span class="method get" style="padding:2px 6px;font-size:11px;font-family:var(--font-mono)">GET</span></td><td><code>/admin/runs?status=completed</code></td><td>Recent runs with answer preview, full metrics, status filter</td></tr>
+        <tr><td><span class="method get" style="padding:2px 6px;font-size:11px;font-family:var(--font-mono)">GET</span></td><td><code>/admin/executor</code></td><td>Executor health: pending count, oldest pending age, running count</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ── Zoom 5 ── -->
+  <section id="zoom5">
+    <span class="zoom-label">Zoom 5</span>
+    <h2>Event Model</h2>
+
+    <h3>Envelope</h3>
+    <p>Every persisted event and every streamed event uses the same shape. <code>id</code> is the <code>BIGSERIAL</code> primary key — the stable cursor for polling and SSE replay.</p>
+    <pre class="json"><code><span class="lang-tag">json</span>{
+    <span class="st">"id"</span>: <span class="co">143</span>,
+    <span class="st">"run_id"</span>: <span class="st">"uuid"</span>,
+    <span class="st">"type"</span>: <span class="st">"search_call"</span>,
+    <span class="st">"schema_version"</span>: <span class="co">1</span>,
+    <span class="st">"payload"</span>: {},
+    <span class="st">"created_at"</span>: <span class="st">"2026-05-24T10:01:05Z"</span>
+}</code></pre>
+
+    <h3>Event types</h3>
+
+    <table>
+      <thead><tr><th>Type</th><th>Phase</th><th>Key payload fields</th><th>Emitted by</th></tr></thead>
+      <tbody>
+        <tr><td><code>thinking</code></td><td>1</td><td><code>content: string</code> — one complete reasoning segment</td><td>Executor (coalesced from agent chunks)</td></tr>
+        <tr><td><code>thinking_delta</code></td><td>2</td><td><code>content: string</code> — incremental token chunk</td><td>Executor (live streaming)</td></tr>
+        <tr><td><code>search_call</code></td><td>1</td><td><code>query</code>, <code>topic</code>, <code>max_results</code></td><td>Executor (from SearchCallEvent)</td></tr>
+        <tr><td><code>search_result</code></td><td>1</td><td><code>query</code>, <code>results: [{title, url, snippet}]</code></td><td>Executor (from SearchResultEvent)</td></tr>
+        <tr><td><code>tool_error</code></td><td>1</td><td><code>tool_name</code>, <code>message</code></td><td>Executor (from ToolErrorEvent)</td></tr>
+        <tr><td><code>run.started</code></td><td>1</td><td><code>model_name</code>, <code>research_mode</code></td><td>Executor</td></tr>
+        <tr><td><code>run.completed</code></td><td>1</td><td><code>latency_ms</code>, <code>total_tokens</code></td><td>Executor</td></tr>
+        <tr><td><code>run.failed</code></td><td>1</td><td><code>error: string</code></td><td>Executor</td></tr>
+        <tr><td><code>run.cancelled</code></td><td>1</td><td><code>reason</code></td><td>Executor</td></tr>
+        <tr><td><code>run.timed_out</code></td><td>1</td><td><code>timeout_seconds</code></td><td>Executor</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout blue">
+      <strong>Final answer is not a stream event</strong>
+      It is written to <code>turns.answer</code> when the run completes. Clients fetch it from <code>GET /turns/{id}</code> after the stream closes. This eliminates the ambiguous <code>final</code> event type from the current implementation.
+    </div>
+
+    <h3>Payload examples</h3>
+
+    <h4>search_call</h4>
+    <pre class="json"><code><span class="lang-tag">json</span>{ <span class="st">"query"</span>: <span class="st">"US CPI June 2026"</span>, <span class="st">"topic"</span>: <span class="st">"news"</span>, <span class="st">"max_results"</span>: <span class="co">5</span> }</code></pre>
+
+    <h4>search_result</h4>
+    <pre class="json"><code><span class="lang-tag">json</span>{
+    <span class="st">"query"</span>: <span class="st">"US CPI June 2026"</span>,
+    <span class="st">"results"</span>: [
+        { <span class="st">"title"</span>: <span class="st">"CPI Data Released"</span>, <span class="st">"url"</span>: <span class="st">"https://..."</span>, <span class="st">"snippet"</span>: <span class="st">"..."</span> }
+    ]
+}</code></pre>
+
+    <h4>thinking</h4>
+    <pre class="json"><code><span class="lang-tag">json</span>{ <span class="st">"content"</span>: <span class="st">"Found 4 sources — now cross-checking claims about Y."</span> }</code></pre>
+
+    <h4>run.completed</h4>
+    <pre class="json"><code><span class="lang-tag">json</span>{ <span class="st">"latency_ms"</span>: <span class="co">34200</span>, <span class="st">"total_tokens"</span>: <span class="co">2760</span> }</code></pre>
+  </section>
+
+  <!-- ── Zoom 6 ── -->
+  <section id="zoom6">
+    <span class="zoom-label">Zoom 6</span>
+    <h2>Implementation Details</h2>
+
+    <h3 id="schema">Database Schema</h3>
+    <pre class="sql"><code><span class="lang-tag">sql</span><span class="kw">CREATE TABLE</span> conversations (
+    id         <span class="ty">UUID</span>        <span class="kw">PRIMARY KEY DEFAULT</span> <span class="fn">gen_random_uuid</span>(),
+    created_at <span class="ty">TIMESTAMPTZ</span> <span class="kw">NOT NULL DEFAULT</span> <span class="fn">now</span>()
+);
+
+<span class="kw">CREATE TABLE</span> turns (
+    id              <span class="ty">UUID</span>        <span class="kw">PRIMARY KEY DEFAULT</span> <span class="fn">gen_random_uuid</span>(),
+    conversation_id <span class="ty">UUID</span>        <span class="kw">NOT NULL REFERENCES</span> conversations(id),
+    position        <span class="ty">INTEGER</span>     <span class="kw">NOT NULL</span>,
+    user_message    <span class="ty">TEXT</span>        <span class="kw">NOT NULL</span>,
+    answer          <span class="ty">TEXT</span>,        <span class="cm">-- NULL until a run completes successfully</span>
+    research_mode   <span class="ty">TEXT</span>        <span class="kw">NOT NULL</span>,
+    created_at      <span class="ty">TIMESTAMPTZ</span> <span class="kw">NOT NULL DEFAULT</span> <span class="fn">now</span>(),
+    <span class="kw">UNIQUE</span> (conversation_id, position)
+);
+
+<span class="kw">CREATE TABLE</span> attachments (
+    id         <span class="ty">UUID</span>        <span class="kw">PRIMARY KEY DEFAULT</span> <span class="fn">gen_random_uuid</span>(),
+    turn_id    <span class="ty">UUID</span>        <span class="kw">NOT NULL REFERENCES</span> turns(id),
+    position   <span class="ty">INTEGER</span>     <span class="kw">NOT NULL</span>,
+    name       <span class="ty">TEXT</span>        <span class="kw">NOT NULL</span>,
+    mime_type  <span class="ty">TEXT</span>        <span class="kw">NOT NULL</span>,
+    size_bytes <span class="ty">INTEGER</span>     <span class="kw">NOT NULL</span>,
+    sha256     <span class="ty">TEXT</span>        <span class="kw">NOT NULL</span>,
+    content    <span class="ty">TEXT</span>        <span class="kw">NOT NULL</span>,
+    created_at <span class="ty">TIMESTAMPTZ</span> <span class="kw">NOT NULL DEFAULT</span> <span class="fn">now</span>(),
+    <span class="kw">UNIQUE</span> (turn_id, position)
+);
+
+<span class="kw">CREATE TABLE</span> runs (
+    id               <span class="ty">UUID</span>          <span class="kw">PRIMARY KEY DEFAULT</span> <span class="fn">gen_random_uuid</span>(),
+    turn_id          <span class="ty">UUID</span>          <span class="kw">NOT NULL REFERENCES</span> turns(id),
+    conversation_id  <span class="ty">UUID</span>          <span class="kw">NOT NULL REFERENCES</span> conversations(id),
+    attempt          <span class="ty">INTEGER</span>       <span class="kw">NOT NULL DEFAULT</span> <span class="co">1</span>,
+    status           <span class="ty">TEXT</span>          <span class="kw">NOT NULL DEFAULT</span> <span class="st">'pending'</span>,
+    research_mode    <span class="ty">TEXT</span>          <span class="kw">NOT NULL DEFAULT</span> <span class="st">'standard'</span>,
+    model_name       <span class="ty">TEXT</span>,
+    input_tokens     <span class="ty">INTEGER</span>       <span class="kw">NOT NULL DEFAULT</span> <span class="co">0</span>,
+    output_tokens    <span class="ty">INTEGER</span>       <span class="kw">NOT NULL DEFAULT</span> <span class="co">0</span>,
+    total_tokens     <span class="ty">INTEGER</span>       <span class="kw">NOT NULL DEFAULT</span> <span class="co">0</span>,
+    search_calls     <span class="ty">INTEGER</span>       <span class="kw">NOT NULL DEFAULT</span> <span class="co">0</span>,
+    latency_ms       <span class="ty">INTEGER</span>,
+    cost_usd         <span class="ty">NUMERIC</span>(<span class="co">12</span>,<span class="co">8</span>) <span class="kw">NOT NULL DEFAULT</span> <span class="co">0</span>,
+    error_message    <span class="ty">TEXT</span>,
+    cancel_requested <span class="ty">BOOLEAN</span>       <span class="kw">NOT NULL DEFAULT</span> <span class="kw">false</span>,
+    timeout_seconds  <span class="ty">INTEGER</span>       <span class="kw">NOT NULL DEFAULT</span> <span class="co">600</span>,
+    created_at       <span class="ty">TIMESTAMPTZ</span>   <span class="kw">NOT NULL DEFAULT</span> <span class="fn">now</span>(),
+    started_at       <span class="ty">TIMESTAMPTZ</span>,
+    completed_at     <span class="ty">TIMESTAMPTZ</span>,
+    <span class="kw">UNIQUE</span> (turn_id, attempt)
+);
+
+<span class="kw">CREATE INDEX</span> idx_runs_status          <span class="kw">ON</span> runs(status)
+    <span class="kw">WHERE</span> status <span class="kw">IN</span> (<span class="st">'pending'</span>, <span class="st">'running'</span>, <span class="st">'claimed'</span>);
+<span class="kw">CREATE INDEX</span> idx_runs_conversation_id  <span class="kw">ON</span> runs(conversation_id);
+
+<span class="kw">CREATE TABLE</span> run_events (
+    id             <span class="ty">BIGSERIAL</span>    <span class="kw">PRIMARY KEY</span>,  <span class="cm">-- global monotonic cursor</span>
+    run_id         <span class="ty">UUID</span>         <span class="kw">NOT NULL REFERENCES</span> runs(id),
+    type           <span class="ty">TEXT</span>         <span class="kw">NOT NULL</span>,
+    schema_version <span class="ty">INTEGER</span>      <span class="kw">NOT NULL DEFAULT</span> <span class="co">1</span>,
+    payload        <span class="ty">JSONB</span>        <span class="kw">NOT NULL DEFAULT</span> <span class="st">'{}'</span>,
+    created_at     <span class="ty">TIMESTAMPTZ</span>  <span class="kw">NOT NULL DEFAULT</span> <span class="fn">now</span>()
+);
+
+<span class="kw">CREATE INDEX</span> idx_run_events_run_id_id <span class="kw">ON</span> run_events(run_id, id);</code></pre>
+
+    <p>Pagination query for events is always:</p>
+    <pre class="sql"><code><span class="lang-tag">sql</span><span class="kw">SELECT</span> * <span class="kw">FROM</span> run_events
+<span class="kw">WHERE</span> run_id = <span class="co">$1</span> <span class="kw">AND</span> id > <span class="co">$2</span>
+<span class="kw">ORDER BY</span> id
+<span class="kw">LIMIT</span> <span class="co">$3</span>;</code></pre>
+
+    <h3 id="executor">Executor</h3>
+
+    <h4>Claiming</h4>
+    <pre class="sql"><code><span class="lang-tag">sql</span><span class="kw">SELECT</span> id <span class="kw">FROM</span> runs
+<span class="kw">WHERE</span> status = <span class="st">'pending'</span>
+<span class="kw">ORDER BY</span> created_at <span class="kw">ASC</span>
+<span class="kw">LIMIT</span> <span class="co">1</span>
+<span class="kw">FOR UPDATE SKIP LOCKED</span>;</code></pre>
+
+    <p>Multiple executor instances can run safely — <code>SKIP LOCKED</code> prevents double-claim without application-level locks.</p>
+
+    <h4>Worker lifecycle</h4>
+    <pre class="python"><code><span class="lang-tag">python</span><span class="py-kw">async def</span> <span class="py-de">execute_run</span>(run_id: <span class="py-bi">str</span>, adapter: AgentAdapter) -> <span class="kw">None</span>:
+    <span class="cm"># 1. Claim atomically</span>
+    <span class="py-kw">async with</span> session_factory() <span class="py-kw">as</span> session:
+        run = <span class="py-kw">await</span> session.get(Run, run_id)
+        <span class="py-kw">if not</span> run <span class="py-kw">or</span> run.status != <span class="st">"pending"</span>:
+            <span class="py-kw">return</span>
+        <span class="py-kw">if</span> run.cancel_requested:
+            run.status = <span class="st">"cancelled"</span>
+            run.completed_at = <span class="fn">now</span>()
+            <span class="py-kw">await</span> session.commit()
+            <span class="py-kw">return</span>
+        run.status = <span class="st">"claimed"</span>
+        run.started_at = <span class="fn">now</span>()
+        <span class="py-kw">await</span> session.commit()
+
+    <span class="py-kw">await</span> <span class="fn">persist_event</span>(run_id, <span class="st">"run.started"</span>, {<span class="st">"research_mode"</span>: run.research_mode})
+
+    <span class="cm"># 2. Load context</span>
+    turn = <span class="py-kw">await</span> <span class="fn">load_turn</span>(run.turn_id)
+    history = <span class="py-kw">await</span> <span class="fn">load_history</span>(run.conversation_id, before_position=turn.position)
+    attachments = <span class="py-kw">await</span> <span class="fn">load_attachments</span>(run.turn_id)
+
+    <span class="py-kw">async with</span> session_factory() <span class="py-kw">as</span> session:
+        (<span class="py-kw">await</span> session.get(Run, run_id)).status = <span class="st">"running"</span>
+        <span class="py-kw">await</span> session.commit()
+
+    <span class="cm"># 3. Execute with timeout</span>
+    started = <span class="fn">perf_counter</span>()
+    <span class="py-kw">try</span>:
+        <span class="py-kw">async with</span> asyncio.<span class="fn">timeout</span>(run.timeout_seconds):
+            result = <span class="py-kw">await</span> adapter.<span class="fn">run</span>(
+                user_message=turn.user_message,
+                attachments=attachments,
+                history=history,
+                research_mode=run.research_mode,
+                on_event=<span class="py-kw">lambda</span> e: <span class="fn">persist_and_notify</span>(run_id, e),
+            )
+        latency_ms = <span class="py-bi">int</span>((<span class="fn">perf_counter</span>() - started) * <span class="co">1000</span>)
+
+        <span class="py-kw">async with</span> session_factory() <span class="py-kw">as</span> session:
+            run = <span class="py-kw">await</span> session.get(Run, run_id)
+            turn = <span class="py-kw">await</span> session.get(Turn, run.turn_id)
+            <span class="py-kw">if</span> run.cancel_requested:
+                run.status = <span class="st">"cancelled"</span>
+            <span class="py-kw">else</span>:
+                run.status = <span class="st">"completed"</span>
+                turn.answer = result.answer         <span class="cm"># final answer written here</span>
+            run.model_name    = result.model_name
+            run.input_tokens  = result.input_tokens  <span class="cm"># summed across ALL LLM calls</span>
+            run.output_tokens = result.output_tokens
+            run.total_tokens  = result.total_tokens
+            run.search_calls  = result.search_calls  <span class="cm"># from SearchCallEvent count only</span>
+            run.latency_ms    = latency_ms
+            run.cost_usd      = <span class="fn">estimate_cost</span>(result.model_name, result.input_tokens, result.output_tokens)
+            run.completed_at  = <span class="fn">now</span>()
+            <span class="py-kw">await</span> session.commit()
+
+        <span class="py-kw">await</span> <span class="fn">persist_event</span>(run_id, <span class="st">"run.completed"</span>, {<span class="st">"latency_ms"</span>: latency_ms})
+
+    <span class="py-kw">except</span> asyncio.TimeoutError:
+        <span class="py-kw">await</span> <span class="fn">_mark_terminal</span>(run_id, <span class="st">"timed_out"</span>, <span class="st">f"Exceeded {run.timeout_seconds}s"</span>)
+        <span class="py-kw">await</span> <span class="fn">persist_event</span>(run_id, <span class="st">"run.timed_out"</span>, {<span class="st">"timeout_seconds"</span>: run.timeout_seconds})
+
+    <span class="py-kw">except</span> asyncio.CancelledError:
+        <span class="py-kw">await</span> <span class="fn">_mark_terminal</span>(run_id, <span class="st">"cancelled"</span>, <span class="st">"Task cancelled."</span>)
+        <span class="py-kw">await</span> <span class="fn">persist_event</span>(run_id, <span class="st">"run.cancelled"</span>, {})
+        <span class="py-kw">raise</span>
+
+    <span class="py-kw">except</span> <span class="py-bi">Exception</span> <span class="py-kw">as</span> exc:
+        <span class="py-kw">await</span> <span class="fn">_mark_terminal</span>(run_id, <span class="st">"failed"</span>, <span class="py-bi">str</span>(exc))
+        <span class="py-kw">await</span> <span class="fn">persist_event</span>(run_id, <span class="st">"run.failed"</span>, {<span class="st">"error"</span>: <span class="py-bi">str</span>(exc)})</code></pre>
+
+    <h4>Cooperative cancellation</h4>
+    <pre class="python"><code><span class="lang-tag">python</span><span class="py-kw">async def</span> <span class="py-de">persist_and_notify</span>(run_id: <span class="py-bi">str</span>, event: AgentEvent) -> <span class="kw">None</span>:
+    event_type, payload = <span class="fn">serialize_event</span>(event)
+    <span class="py-kw">async with</span> session_factory() <span class="py-kw">as</span> session:
+        run = <span class="py-kw">await</span> session.get(Run, run_id)
+        <span class="py-kw">if</span> run <span class="py-kw">and</span> run.cancel_requested:
+            <span class="py-kw">raise</span> asyncio.CancelledError()       <span class="cm"># caught by execute_run</span>
+        session.<span class="fn">add</span>(RunEvent(run_id=run_id, type=event_type, payload=payload))
+        <span class="py-kw">await</span> session.commit()
+        <span class="cm"># Phase 2: wake SSE handlers</span>
+        <span class="py-kw">await</span> session.<span class="fn">execute</span>(<span class="fn">text</span>(<span class="st">f"SELECT pg_notify('run_{run_id}', '')"</span>))
+        <span class="py-kw">await</span> session.commit()</code></pre>
+
+    <h3 id="adapter">AgentAdapter Interface</h3>
+    <p>The <code>deepagents</code> library is isolated behind one adapter. Nothing outside the adapter sees LangChain tuple shapes, stream modes, or message-role conventions.</p>
+    <pre class="python"><code><span class="lang-tag">python</span><span class="py-dc">@dataclass</span>
+<span class="py-kw">class</span> <span class="ts-ty">SearchResult</span>:
+    title: <span class="py-bi">str</span>; url: <span class="py-bi">str</span>; snippet: <span class="py-bi">str</span>
+
+<span class="py-dc">@dataclass</span>
+<span class="py-kw">class</span> <span class="ts-ty">ThinkingEvent</span>:
+    content: <span class="py-bi">str</span>
+
+<span class="py-dc">@dataclass</span>
+<span class="py-kw">class</span> <span class="ts-ty">ThinkingDeltaEvent</span>:   <span class="cm"># Phase 2 only</span>
+    content: <span class="py-bi">str</span>
+
+<span class="py-dc">@dataclass</span>
+<span class="py-kw">class</span> <span class="ts-ty">SearchCallEvent</span>:
+    query: <span class="py-bi">str</span>; topic: <span class="py-bi">str</span> = <span class="st">"general"</span>; max_results: <span class="py-bi">int</span> = <span class="co">5</span>
+
+<span class="py-dc">@dataclass</span>
+<span class="py-kw">class</span> <span class="ts-ty">SearchResultEvent</span>:
+    query: <span class="py-bi">str</span>; results: <span class="py-bi">list</span>[SearchResult]
+
+<span class="py-dc">@dataclass</span>
+<span class="py-kw">class</span> <span class="ts-ty">ToolErrorEvent</span>:
+    tool_name: <span class="py-bi">str</span>; message: <span class="py-bi">str</span>
+
+AgentEvent = ThinkingEvent | ThinkingDeltaEvent | SearchCallEvent | SearchResultEvent | ToolErrorEvent
+
+<span class="py-dc">@dataclass</span>
+<span class="py-kw">class</span> <span class="ts-ty">RunResult</span>:
+    answer: <span class="py-bi">str</span>
+    model_name: <span class="py-bi">str</span>
+    input_tokens: <span class="py-bi">int</span>   <span class="cm"># summed across ALL LLM calls in the run</span>
+    output_tokens: <span class="py-bi">int</span>
+    total_tokens: <span class="py-bi">int</span>
+    search_calls: <span class="py-bi">int</span>   <span class="cm"># counted from SearchCallEvent instances only</span>
+
+<span class="py-kw">class</span> <span class="ts-ty">AgentAdapter</span>(Protocol):
+    <span class="py-kw">async def</span> <span class="py-de">run</span>(
+        self,
+        user_message: <span class="py-bi">str</span>,
+        attachments: <span class="py-bi">list</span>[Attachment],
+        history: <span class="py-bi">list</span>[HistoryTurn],
+        research_mode: ResearchMode,
+        on_event: Callable[[AgentEvent], Awaitable[<span class="kw">None</span>]],
+    ) -> RunResult: ...</code></pre>
+
+    <div class="callout yellow">
+      <strong>Known bug to fix</strong>
+      The current implementation reads token usage only from the final LLM call. <code>RunResult.input_tokens</code> must aggregate usage across <em>all</em> model calls in the run. The adapter owns this aggregation — it must not leak implementation detail outside.
+    </div>
+
+    <h3 id="sse-impl">SSE Implementation (Phase 2)</h3>
+    <pre class="python"><code><span class="lang-tag">python</span><span class="py-dc">@router.get</span>(<span class="st">"/runs/{run_id}/events/stream"</span>)
+<span class="py-kw">async def</span> <span class="py-de">run_event_stream</span>(run_id: <span class="py-bi">str</span>, after_id: <span class="py-bi">int</span> = <span class="co">0</span>):
+    <span class="py-kw">return</span> <span class="fn">StreamingResponse</span>(
+        <span class="fn">_stream</span>(run_id, after_id),
+        media_type=<span class="st">"text/event-stream"</span>,
+        headers={<span class="st">"Cache-Control"</span>: <span class="st">"no-cache"</span>, <span class="st">"X-Accel-Buffering"</span>: <span class="st">"no"</span>},
+    )
+
+<span class="py-kw">async def</span> <span class="py-de">_stream</span>(run_id: <span class="py-bi">str</span>, after_id: <span class="py-bi">int</span>):
+    <span class="cm"># 1. Replay history</span>
+    last_id = after_id
+    <span class="py-kw">for</span> event <span class="py-kw">in await</span> event_repo.<span class="fn">list</span>(run_id, after_id=last_id):
+        <span class="py-kw">yield</span> <span class="fn">_sse</span>(event)
+        last_id = event.id
+
+    <span class="cm"># 2. Already terminal?</span>
+    run = <span class="py-kw">await</span> run_repo.<span class="fn">get</span>(run_id)
+    <span class="py-kw">if</span> run.status <span class="py-kw">in</span> (<span class="st">"completed"</span>, <span class="st">"failed"</span>, <span class="st">"cancelled"</span>, <span class="st">"timed_out"</span>):
+        <span class="py-kw">yield</span> <span class="st">f"event: done\ndata: {json.dumps({'status': run.status})}\n\n"</span>
+        <span class="py-kw">return</span>
+
+    <span class="cm"># 3. Tail via LISTEN/NOTIFY</span>
+    <span class="py-kw">async with</span> <span class="fn">pg_listen</span>(<span class="st">f"run_{run_id}"</span>) <span class="py-kw">as</span> notifications:
+        <span class="py-kw">while True</span>:
+            <span class="py-kw">try</span>:
+                <span class="py-kw">await</span> asyncio.<span class="fn">wait_for</span>(notifications.<span class="fn">get</span>(), timeout=<span class="co">30</span>)
+            <span class="py-kw">except</span> asyncio.TimeoutError:
+                <span class="py-kw">yield</span> <span class="st">": keepalive\n\n"</span>   <span class="cm"># prevents proxy timeout</span>
+                <span class="py-kw">continue</span>
+
+            <span class="py-kw">for</span> event <span class="py-kw">in await</span> event_repo.<span class="fn">list</span>(run_id, after_id=last_id):
+                <span class="py-kw">yield</span> <span class="fn">_sse</span>(event)
+                last_id = event.id
+
+            run = <span class="py-kw">await</span> run_repo.<span class="fn">get</span>(run_id)
+            <span class="py-kw">if</span> run.status <span class="py-kw">in</span> (<span class="st">"completed"</span>, <span class="st">"failed"</span>, <span class="st">"cancelled"</span>, <span class="st">"timed_out"</span>):
+                <span class="py-kw">yield</span> <span class="st">f"event: done\ndata: {json.dumps({'status': run.status})}\n\n"</span>
+                <span class="py-kw">return</span>
+
+<span class="py-kw">def</span> <span class="py-de">_sse</span>(event: RunEvent) -> <span class="py-bi">str</span>:
+    <span class="py-kw">return</span> (
+        <span class="st">f"id: {event.id}\n"</span>
+        <span class="st">f"event: run_event\n"</span>
+        <span class="st">f"data: {json.dumps(event.dict())}\n\n"</span>
+    )</code></pre>
+
+    <h3 id="frontend-hooks">Frontend Hooks (Phase 2)</h3>
+    <pre class="typescript"><code><span class="lang-tag">typescript</span><span class="ts-cm">// No polling — refresh on navigation and after turn creation only</span>
+<span class="ts-kw">function</span> <span class="ts-fn">useConversationList</span>(): { conversations, isLoading, refresh }
+<span class="ts-kw">function</span> <span class="ts-fn">useConversation</span>(id: <span class="ts-ty">string</span>): { conversation, isLoading }
+<span class="ts-kw">function</span> <span class="ts-fn">useTurn</span>(id: <span class="ts-ty">string</span>): { turn, isLoading, refetch }  <span class="ts-cm">// refetch after stream closes</span>
+
+<span class="ts-kw">function</span> <span class="ts-fn">useEventStream</span>(runId: <span class="ts-ty">string</span> | <span class="ts-kw">null</span>) {
+    <span class="ts-kw">const</span> [events, setEvents] = <span class="ts-fn">useState</span>&lt;<span class="ts-ty">RunEvent</span>[]&gt;([])
+    <span class="ts-kw">const</span> [status, setStatus] = <span class="ts-fn">useState</span>&lt;<span class="ts-ty">StreamStatus</span>&gt;(<span class="ts-st">'idle'</span>)
+
+    <span class="ts-fn">useEffect</span>(() => {
+        <span class="ts-kw">if</span> (!runId) <span class="ts-kw">return</span>
+        <span class="ts-fn">setStatus</span>(<span class="ts-st">'connecting'</span>)
+        <span class="ts-kw">const</span> source = <span class="ts-kw">new</span> <span class="ts-fn">EventSource</span>(<span class="ts-st">`/api/v1/runs/${runId}/events/stream`</span>)
+
+        source.<span class="ts-fn">addEventListener</span>(<span class="ts-st">'run_event'</span>, (e) => {
+            <span class="ts-fn">setEvents</span>(prev => [...prev, <span class="ts-ty">JSON</span>.<span class="ts-fn">parse</span>(e.data) <span class="ts-kw">as</span> <span class="ts-ty">RunEvent</span>])
+            <span class="ts-fn">setStatus</span>(<span class="ts-st">'streaming'</span>)
+        })
+        source.<span class="ts-fn">addEventListener</span>(<span class="ts-st">'done'</span>, (e) => {
+            <span class="ts-kw">const</span> { status } = <span class="ts-ty">JSON</span>.<span class="ts-fn">parse</span>(e.data)
+            <span class="ts-fn">setStatus</span>(status === <span class="ts-st">'completed'</span> ? <span class="ts-st">'done'</span> : <span class="ts-st">'error'</span>)
+            source.<span class="ts-fn">close</span>()
+        })
+        source.onerror = () => { <span class="ts-fn">setStatus</span>(<span class="ts-st">'error'</span>); source.<span class="ts-fn">close</span>() }
+        <span class="ts-kw">return</span> () => source.<span class="ts-fn">close</span>()
+    }, [runId])
+
+    <span class="ts-kw">return</span> { events, status }
+}</code></pre>
+
+    <p><strong>Turn lifecycle in the UI:</strong></p>
+    <pre class="plain"><code><span class="lang-tag">flow</span>POST /conversations/{id}/turns
+  → { turn_id, run_id, status: "pending" }
+  → activate useEventStream(run_id)
+  → render EventTimeline as events arrive
+  → on "done" event → useTurn(turn_id).refetch() → render turn.answer
+  → refresh useConversationList()</code></pre>
+
+    <p><strong>Event rendering is by type only:</strong></p>
+    <table>
+      <thead><tr><th>Event type</th><th>UI element</th></tr></thead>
+      <tbody>
+        <tr><td><code>run.started</code></td><td>Status badge: Running</td></tr>
+        <tr><td><code>thinking</code></td><td>Collapsible reasoning block</td></tr>
+        <tr><td><code>thinking_delta</code></td><td>Incremental text appended to open block</td></tr>
+        <tr><td><code>search_call</code></td><td>Search query chip with query text</td></tr>
+        <tr><td><code>search_result</code></td><td>Expandable result list</td></tr>
+        <tr><td><code>tool_error</code></td><td>Error callout</td></tr>
+        <tr><td><code>run.completed</code></td><td>Status badge: Done</td></tr>
+        <tr><td><code>run.failed</code></td><td>Error banner with message</td></tr>
+        <tr><td><code>run.cancelled</code></td><td>Status badge: Cancelled</td></tr>
+        <tr><td><code>run.timed_out</code></td><td>Error banner with timeout info</td></tr>
+        <tr><td><em>unknown type</em></td><td>Generic fallback tile — no crash, no content parsing</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <hr>
+
+  <!-- ── Module Layout ── -->
+  <section id="layout">
+    <h2>Module Layout</h2>
+    <pre class="plain"><code><span class="lang-tag">tree</span>backend/
+  src/
+    app/
+      api/
+        routes/
+          conversations.py   <span class="cm"># HTTP only: parse, validate, delegate, respond</span>
+          turns.py
+          runs.py
+          admin.py
+        auth.py              <span class="cm"># bearer token middleware</span>
+        deps.py
+        errors.py
+      core/
+        config.py            <span class="cm"># pydantic-settings, fail-fast on missing secrets</span>
+        db.py                <span class="cm"># async engine, session factory</span>
+        pricing.py           <span class="cm"># model → cost table</span>
+        logging.py
+      models/                <span class="cm"># SQLAlchemy ORM models</span>
+        conversation.py
+        turn.py
+        attachment.py
+        run.py
+        run_event.py
+      repositories/          <span class="cm"># SQL queries only, no business logic</span>
+        conversation_repo.py
+        turn_repo.py
+        run_repo.py
+        event_repo.py
+        attachment_repo.py
+      services/              <span class="cm"># orchestration, lifecycle rules</span>
+        turn_service.py      <span class="cm"># create turn + run, enforce one-active-run constraint</span>
+        run_service.py       <span class="cm"># cancel, retry, status reads</span>
+        executor_service.py  <span class="cm"># claim → run → finalize worker loop</span>
+        agent_adapter.py     <span class="cm"># ALL deepagents/LangChain internals here</span>
+      schemas/               <span class="cm"># Pydantic request/response models (OpenAPI contract)</span>
+        conversations.py
+        turns.py
+        runs.py
+        events.py
+        admin.py
+      main.py
+  alembic/
+    env.py
+    versions/
+      0001_initial_schema.py
+  tests/
+    unit/
+    integration/
+    fixtures/
+
+frontend/                    <span class="cm"># Phase 2 only</span>
+  src/
+    lib/
+      api-types.ts           <span class="cm"># generated from OpenAPI — never hand-maintained</span>
+      api.ts                 <span class="cm"># fetch wrappers with runtime validation</span>
+    hooks/
+      useConversationList.ts
+      useConversation.ts
+      useTurn.ts
+      useEventStream.ts      <span class="cm"># native EventSource, no custom SSE parser</span>
+    pages/
+      ConversationPage.tsx
+      AdminPage.tsx
+    components/
+      Sidebar.tsx
+      TurnList.tsx
+      TurnItem.tsx
+      LiveTurnView.tsx
+      EventTimeline.tsx
+      MessageComposer.tsx
+      AttachmentPicker.tsx</code></pre>
+
+    <p><strong>Separation rules:</strong> Routes own HTTP. Repositories own SQL. Services own business logic. AgentAdapter owns all external library behavior.</p>
+
+    <p>TypeScript types are generated from the FastAPI OpenAPI schema at build time:</p>
+    <pre class="bash"><code><span class="lang-tag">bash</span>npx openapi-typescript http://localhost:8000/openapi.json -o src/lib/api-types.ts</code></pre>
+  </section>
+
+  <!-- ── Config ── -->
+  <section id="config">
+    <h2>Configuration</h2>
+    <pre class="python"><code><span class="lang-tag">python</span><span class="py-kw">class</span> <span class="ts-ty">Settings</span>(BaseSettings):
+    database_url:                  <span class="py-bi">str</span>
+    api_secret_key:                <span class="py-bi">str</span> = <span class="fn">Field</span>(min_length=<span class="co">16</span>)  <span class="cm"># aborts startup if absent</span>
+    admin_secret_key:              <span class="py-bi">str</span> = <span class="fn">Field</span>(min_length=<span class="co">16</span>)  <span class="cm"># aborts startup if absent</span>
+    openai_api_key:                <span class="py-bi">str</span> = <span class="fn">Field</span>(min_length=<span class="co">1</span>)   <span class="cm"># aborts startup if absent</span>
+    tavily_api_key:                <span class="py-bi">str</span> = <span class="fn">Field</span>(min_length=<span class="co">1</span>)   <span class="cm"># aborts startup if absent</span>
+    agent_model:                   <span class="py-bi">str</span> = <span class="st">"openai:gpt-5-nano"</span>
+    agent_max_search_results:      <span class="py-bi">int</span> = <span class="fn">Field</span>(default=<span class="co">5</span>, ge=<span class="co">1</span>, le=<span class="co">20</span>)
+    agent_timeout_light_seconds:   <span class="py-bi">int</span> = <span class="fn">Field</span>(default=<span class="co">120</span>, ge=<span class="co">30</span>, le=<span class="co">600</span>)
+    agent_timeout_standard_seconds:<span class="py-bi">int</span> = <span class="fn">Field</span>(default=<span class="co">600</span>, ge=<span class="co">60</span>, le=<span class="co">1800</span>)
+    cors_origins:                  <span class="py-bi">list</span>[<span class="py-bi">str</span>] = <span class="fn">Field</span>(default_factory=<span class="py-kw">lambda</span>: [<span class="st">"http://localhost:5173"</span>])</code></pre>
+  </section>
+
+  <!-- ── Startup Recovery ── -->
+  <section id="recovery">
+    <h2>Startup Recovery</h2>
+    <p>On startup, find runs stuck in <code>claimed</code> or <code>running</code> and mark them <code>failed</code>. Logged with run IDs so operators see when recovery occurs.</p>
+    <pre class="python"><code><span class="lang-tag">python</span><span class="py-kw">async def</span> <span class="py-de">recover_stuck_runs</span>() -> <span class="kw">None</span>:
+    <span class="py-kw">async with</span> session_factory() <span class="py-kw">as</span> session:
+        result = <span class="py-kw">await</span> session.<span class="fn">execute</span>(
+            <span class="fn">select</span>(Run).<span class="fn">where</span>(Run.status.<span class="fn">in_</span>([<span class="st">"claimed"</span>, <span class="st">"running"</span>]))
+        )
+        <span class="py-kw">for</span> run <span class="py-kw">in</span> result.<span class="fn">scalars</span>():
+            run.status = <span class="st">"failed"</span>
+            run.error_message = <span class="st">"Server restarted during execution."</span>
+            run.completed_at = <span class="fn">now</span>()
+        <span class="py-kw">await</span> session.commit()</code></pre>
+    <p>Lease-based recovery (re-claim stale runs after lease expiry) is a Phase 1C hardening item.</p>
+  </section>
+
+  <!-- ── Phases ── -->
+  <section id="phases">
+    <h2>Phase Breakdown</h2>
+
+    <div class="phase-bar">
+      <div class="phase-chip p1">
+        <div class="phase-label">Phase 1A</div>
+        <div class="phase-name">Schema &amp; Foundation</div>
+      </div>
+      <div class="phase-chip p1">
+        <div class="phase-label">Phase 1B</div>
+        <div class="phase-name">API Execution</div>
+      </div>
+      <div class="phase-chip p1">
+        <div class="phase-label">Phase 1C</div>
+        <div class="phase-name">Hardening</div>
+      </div>
+      <div class="phase-chip p2">
+        <div class="phase-label">Phase 2A</div>
+        <div class="phase-name">Minimal UI</div>
+      </div>
+      <div class="phase-chip p2">
+        <div class="phase-label">Phase 2B</div>
+        <div class="phase-name">UX &amp; Admin</div>
+      </div>
+    </div>
+
+    <h3>Phase 1A — Schema and domain foundation</h3>
+    <ul>
+      <li>New database schema (4 tables + indexes)</li>
+      <li>Alembic migration 0001</li>
+      <li>SQLAlchemy models</li>
+      <li>Repository layer (no business logic yet)</li>
+      <li><code>pydantic-settings</code> with fail-fast validation on all required secrets</li>
+      <li>Health endpoint</li>
+    </ul>
+    <div class="callout green"><strong>Acceptance</strong> App boots only with valid required config; migration creates schema from empty DB; tests run against clean test DB.</div>
+
+    <h3>Phase 1B — API execution</h3>
+    <ul>
+      <li>All endpoints: conversations, turns, runs, events (JSON polling), admin</li>
+      <li>Executor: claim → run → finalize lifecycle with cooperative cancellation</li>
+      <li>AgentAdapter stub for tests; real DeepAgents adapter integration</li>
+      <li>Startup recovery</li>
+      <li>Bearer token auth</li>
+      <li>Integration tests: full turn lifecycle, cancellation, retry, event cursor replay</li>
+    </ul>
+    <div class="callout green"><strong>Acceptance</strong> Run completes with no UI; events queryable by cursor; final answer on <code>turns.answer</code>.</div>
+
+    <h3>Phase 1C — Hardening</h3>
+    <ul>
+      <li>Structured logging with correlation IDs (<code>X-Request-ID</code>, run IDs propagated)</li>
+      <li>Metrics instrumentation (counters, histograms)</li>
+      <li>Data retention cleanup job (run_events: 90 days)</li>
+      <li>Failure tests: executor crash recovery, duplicate claim prevention, malformed adapter stream</li>
+      <li>Load test: concurrent runs, event throughput</li>
+    </ul>
+
+    <h3>Phase 2A — Minimal UI</h3>
+    <ul>
+      <li><code>GET /runs/{id}/events/stream</code> SSE with PostgreSQL LISTEN/NOTIFY</li>
+      <li><code>npx openapi-typescript</code> generating <code>api-types.ts</code> at build time</li>
+      <li>Conversation list and detail</li>
+      <li>Turn rendering (user message + answer + metrics)</li>
+      <li><code>useEventStream</code> with native <code>EventSource</code></li>
+      <li><code>EventTimeline</code> component rendering by event type</li>
+      <li><code>MessageComposer</code> with attachment picker</li>
+    </ul>
+    <div class="callout green"><strong>Acceptance</strong> UI renders completed conversations from REST only; attaches to active run via SSE; disconnecting does not cancel execution.</div>
+
+    <h3>Phase 2B — UX and admin improvements</h3>
+    <ul>
+      <li><code>thinking_delta</code> support for incremental reasoning text</li>
+      <li>Retry / cancel controls in the UI</li>
+      <li>Admin dashboard with run filtering</li>
+      <li>Attachment UX improvements</li>
+    </ul>
+  </section>
+
+  <!-- ── Testing ── -->
+  <section id="testing">
+    <h2>Testing Strategy</h2>
+
+    <h3>Unit tests</h3>
+    <ul>
+      <li>Run status transition logic (all valid and invalid transitions)</li>
+      <li>Attachment validation (size, extension, total byte limit)</li>
+      <li>Event serialization / deserialization</li>
+      <li>Token and cost aggregation (multiple calls → correct total)</li>
+      <li>Pricing normalization (model name variants)</li>
+    </ul>
+
+    <h3>Integration tests (Phase 1)</h3>
+    <ul>
+      <li>Create conversation → create turn → run completes → answer on turn</li>
+      <li><code>GET /events</code> returns ordered events matching what executor wrote</li>
+      <li>Cancel mid-run → status transitions correctly → events include <code>run.cancelled</code></li>
+      <li>Retry failed run → new attempt created → second attempt succeeds</li>
+      <li>Startup recovery → stuck <code>running</code> run marked <code>failed</code></li>
+      <li>Concurrent turn creation in same conversation → exactly one succeeds, one gets <code>409</code></li>
+    </ul>
+
+    <h3>Integration tests (Phase 2)</h3>
+    <ul>
+      <li>SSE replays historical events from <code>after_id</code></li>
+      <li>SSE tails live events; closes on terminal state</li>
+      <li>Reconnect with <code>after_id</code> → no duplicate events</li>
+      <li>Disconnect does not cancel run</li>
+    </ul>
+
+    <h3>UI tests (Phase 2)</h3>
+    <ul>
+      <li>Render completed conversation from REST only (no SSE needed)</li>
+      <li>Submit turn → attach to stream → events accumulate → <code>done</code> → answer appears</li>
+      <li>Cancel from UI → run transitions to <code>cancelled</code> → stream closes</li>
+    </ul>
+  </section>
+
+  <!-- ── Observability ── -->
+  <section id="observability">
+    <h2>Observability</h2>
+
+    <h3>Structured logging</h3>
+    <p>Every run transition logs: <code>conversation_id</code>, <code>turn_id</code>, <code>run_id</code>, <code>attempt</code>, <code>status</code>, <code>latency_ms</code>. Every request logs: <code>method</code>, <code>path</code>, <code>status_code</code>, <code>duration_ms</code>, <code>run_id</code> if applicable. Correlation via <code>X-Request-ID</code> header.</p>
+
+    <h3>Metrics targets</h3>
+    <table>
+      <thead><tr><th>Metric</th><th>Type</th><th>Labels</th></tr></thead>
+      <tbody>
+        <tr><td><code>runs_created_total</code></td><td>Counter</td><td>research_mode</td></tr>
+        <tr><td><code>runs_completed_total</code> / <code>runs_failed_total</code> / <code>runs_cancelled_total</code> / <code>runs_timed_out_total</code></td><td>Counter</td><td>—</td></tr>
+        <tr><td><code>run_duration_seconds</code></td><td>Histogram</td><td>research_mode</td></tr>
+        <tr><td><code>run_queue_depth</code></td><td>Gauge</td><td>—</td></tr>
+        <tr><td><code>tokens_used_total</code></td><td>Counter</td><td>model</td></tr>
+        <tr><td><code>search_calls_total</code></td><td>Counter</td><td>—</td></tr>
+        <tr><td><code>event_append_duration_seconds</code></td><td>Histogram</td><td>—</td></tr>
+        <tr><td><code>sse_connections_active</code></td><td>Gauge</td><td>Phase 2</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Data retention</h3>
+    <ul>
+      <li><code>run_events</code>: 90 days, via scheduled cleanup job</li>
+      <li><code>runs</code>, <code>turns</code>, <code>conversations</code>: until user or operator deletion</li>
+      <li><code>attachments</code>: tied to their turn; deleted with the conversation</li>
+    </ul>
+  </section>
+
+  <!-- ── Migration ── -->
+  <section id="migration">
+    <h2>Migration from Current Implementation</h2>
+
+    <table>
+      <thead><tr><th>Current</th><th>New</th></tr></thead>
+      <tbody>
+        <tr><td><code>AgentRun</code></td><td><code>runs</code></td></tr>
+        <tr><td><code>Message</code> (user row)</td><td><code>turns.user_message</code></td></tr>
+        <tr><td><code>Message</code> (assistant row)</td><td><code>turns.answer</code></td></tr>
+        <tr><td><code>MessageAttachment</code></td><td><code>attachments</code> (references <code>turn_id</code>, not <code>message_id</code>)</td></tr>
+        <tr><td><code>TraceEvent</code></td><td><code>run_events</code> (references <code>run_id</code>)</td></tr>
+        <tr><td><code>AgentRun.trace_data</code></td><td><strong>deleted</strong></td></tr>
+        <tr><td><code>BackgroundAgentRunner</code></td><td><code>ExecutorService</code> (no subscriber queues, no in-memory broadcast)</td></tr>
+        <tr><td><code>MetricsService</code> (god object)</td><td><code>TurnService</code> + <code>RunService</code> + repositories</td></tr>
+      </tbody>
+    </table>
+
+    <p>Migration script: for each <code>AgentRun</code>, create a <code>turn</code> (from preceding user <code>Message</code>), a <code>run</code> (from <code>AgentRun</code> fields), copy <code>TraceEvent</code> rows to <code>run_events</code>, set <code>turns.answer</code> from the following assistant <code>Message</code>. One-time, runs offline.</p>
+  </section>
+
+  <!-- ── Success Criteria ── -->
+  <section id="success">
+    <h2>Success Criteria</h2>
+
+    <ul class="cards">
+      <li class="green"><span class="num">✓</span><span>A run completes correctly with no browser connected.</span></li>
+      <li class="green"><span class="num">✓</span><span>SSE can attach, detach, and reattach without affecting execution.</span></li>
+      <li class="green"><span class="num">✓</span><span>No duplicate trace storage exists anywhere.</span></li>
+      <li class="green"><span class="num">✓</span><span>Final answer and full metrics are derivable from persisted state alone.</span></li>
+      <li class="green"><span class="num">✓</span><span>Phase 2 UI has zero event-merging heuristics or content-based type guessing.</span></li>
+      <li class="green"><span class="num">✓</span><span>The executor can be replaced (in-process task → queue worker) without API changes.</span></li>
+      <li class="green"><span class="num">✓</span><span>Full Phase 1 workflow is covered by integration tests with no browser.</span></li>
+    </ul>
+
+    <h3>Out of scope</h3>
+    <ul>
+      <li>Multi-user / multi-tenant — single operator deployment. Add as orthogonal concern later.</li>
+      <li>Rate limiting — reverse proxy (nginx, Caddy) layer.</li>
+      <li>Binary attachment upload — text only, inline in request body.</li>
+      <li>Turn editing or branching — linear conversation, append-only.</li>
+      <li>Dynamic pricing — hardcoded table.</li>
+      <li>Vector memory / long-term retrieval.</li>
+      <li>Redis, Celery, WebSockets.</li>
+    </ul>
+  </section>
+
+</main>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      background: '#0f1117',
+      primaryColor: '#1e2a3d',
+      primaryTextColor: '#c9d1e0',
+      primaryBorderColor: '#252d3d',
+      lineColor: '#4f8ef7',
+      secondaryColor: '#161b27',
+      tertiaryColor: '#1a1f2e',
+      edgeLabelBackground: '#0f1117',
+      fontSize: '14px',
+    },
+    flowchart: { curve: 'basis', padding: 20 },
+    sequence: { actorMargin: 60, messageMargin: 40, mirrorActors: false },
+    er: { useMaxWidth: true },
+  });
+</script>
+</body>
+</html>
