@@ -425,13 +425,21 @@
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 24px;
+      padding: 28px 24px;
       margin: 20px 0;
       overflow-x: auto;
-      text-align: center;
     }
 
-    .mermaid { display: inline-block; }
+    .mermaid { display: block; width: 100%; }
+
+    /* Force SVG to fill the wrapper — Mermaid sets inline max-width we override */
+    .mermaid svg {
+      width: 100% !important;
+      max-width: none !important;
+      height: auto !important;
+      min-height: 120px;
+      font-size: 14px !important;
+    }
 
     /* ── Two-column layout for zoom sections ── */
     .zoom-label {
@@ -1840,6 +1848,7 @@ frontend/                    <span class="cm"># Phase 2 only</span>
   mermaid.initialize({
     startOnLoad: true,
     theme: 'dark',
+    useMaxWidth: false,
     themeVariables: {
       background: '#0f1117',
       primaryColor: '#1e2a3d',
@@ -1849,11 +1858,13 @@ frontend/                    <span class="cm"># Phase 2 only</span>
       secondaryColor: '#161b27',
       tertiaryColor: '#1a1f2e',
       edgeLabelBackground: '#0f1117',
-      fontSize: '14px',
+      fontSize: '16px',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
     },
-    flowchart: { curve: 'basis', padding: 20 },
-    sequence: { actorMargin: 60, messageMargin: 40, mirrorActors: false },
-    er: { useMaxWidth: true },
+    flowchart: { curve: 'basis', padding: 24, useMaxWidth: false },
+    sequence: { actorMargin: 80, messageMargin: 50, mirrorActors: false, useMaxWidth: false },
+    er: { useMaxWidth: false },
+    stateDiagram: { useMaxWidth: false },
   });
 </script>
 </body>
