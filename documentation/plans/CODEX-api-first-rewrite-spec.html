@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API-First Rewrite Specification</title>
+  <style>
+    :root {
+      --bg: #f6f1e8;
+      --panel: #fffdf8;
+      --text: #1f1a14;
+      --muted: #665f57;
+      --line: #ddd2c2;
+      --accent: #9a3412;
+      --accent-soft: #fff1e8;
+      --code-bg: #2a211b;
+      --code-text: #f9f4ee;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, #fff8ef 0, transparent 32%),
+        linear-gradient(180deg, #f4ede2 0%, var(--bg) 100%);
+      line-height: 1.65;
+    }
+
+    .page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 40px 24px 64px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #fffaf3 0%, #fff2e6 100%);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 32px;
+      box-shadow: 0 24px 80px rgba(72, 52, 32, 0.08);
+      margin-bottom: 28px;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      margin-bottom: 14px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, h4 {
+      line-height: 1.2;
+      margin: 0 0 16px;
+      color: #17120d;
+    }
+
+    h1 {
+      font-size: clamp(2.4rem, 5vw, 4rem);
+      letter-spacing: -0.03em;
+    }
+
+    h2 {
+      margin-top: 40px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      font-size: 2rem;
+      letter-spacing: -0.02em;
+    }
+
+    h3 {
+      margin-top: 28px;
+      font-size: 1.35rem;
+    }
+
+    h4 {
+      margin-top: 22px;
+      font-size: 1.05rem;
+    }
+
+    p {
+      margin: 0 0 14px;
+      color: var(--text);
+    }
+
+    .lead {
+      font-size: 1.12rem;
+      color: var(--muted);
+      max-width: 780px;
+    }
+
+    .toc,
+    .section-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(72, 52, 32, 0.04);
+    }
+
+    .toc {
+      margin-bottom: 28px;
+    }
+
+    .toc ul,
+    .section-card ul,
+    .section-card ol {
+      margin: 10px 0 0 22px;
+    }
+
+    li {
+      margin-bottom: 8px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+    }
+
+    @media (min-width: 900px) {
+      .grid.two {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      background: #f4ece3;
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-size: 0.94em;
+    }
+
+    pre {
+      margin: 16px 0 20px;
+      padding: 18px;
+      overflow-x: auto;
+      border-radius: 16px;
+      background: var(--code-bg);
+      color: var(--code-text);
+      border: 1px solid #3d3128;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+
+    pre code {
+      background: transparent;
+      padding: 0;
+      color: inherit;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 18px 0 22px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    th,
+    td {
+      padding: 12px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    th {
+      background: #fbf5ed;
+      font-size: 0.92rem;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .pill-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 12px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .pill-list li {
+      margin: 0;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #fff8f0;
+      font-size: 0.95rem;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .small {
+      font-size: 0.95rem;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="eyebrow">Architecture Spec</div>
+      <h1>API-First Rewrite Specification</h1>
+      <p class="lead">
+        This document defines a ground-up rewrite of DeepAgents where durable execution comes first,
+        the event log is canonical, phase 1 ships as API-only, and phase 2 adds a UI as a consumer of
+        the same HTTP and SSE contracts.
+      </p>
+    </section>
+
+    <section class="toc">
+      <h2>Contents</h2>
+      <ul>
+        <li>Purpose and principles</li>
+        <li>Architecture overview</li>
+        <li>Domain model</li>
+        <li>Event model</li>
+        <li>Persistence model</li>
+        <li>Execution model</li>
+        <li>API design</li>
+        <li>Service decomposition</li>
+        <li>Agent integration</li>
+        <li>Auth, validation, and observability</li>
+        <li>Phase 2 UI and SSE design</li>
+        <li>Phase breakdown and testing</li>
+        <li>Open questions and recommended defaults</li>
+      </ul>
+    </section>
+
+    <section class="section-card">
+      <h2>Purpose</h2>
+      <p>This rewrite has four goals:</p>
+      <ol>
+        <li>Make agent execution independent from any UI transport.</li>
+        <li>Make the event log the primary source of truth.</li>
+        <li>Ship an API-only system in phase 1.</li>
+        <li>Add a UI in phase 2 as a pure consumer of the API and event stream.</li>
+      </ol>
+
+      <h3>Executive Summary</h3>
+      <p>The rewritten system revolves around five durable concepts:</p>
+      <ul class="pill-list">
+        <li><code>conversation</code></li>
+        <li><code>turn</code></li>
+        <li><code>run</code></li>
+        <li><code>event</code></li>
+        <li><code>artifact</code></li>
+      </ul>
+      <p class="small muted">
+        Phase 1 exposes these through a clean HTTP API and durable execution model.
+        Phase 2 adds a frontend that reads the same data and attaches to SSE streams for live updates.
+      </p>
+
+      <h3>Design Principles</h3>
+      <ol>
+        <li>Execution is primary.</li>
+        <li>Event log is the source of truth.</li>
+        <li>API before UI.</li>
+        <li>Separation of write and read concerns.</li>
+        <li>Replaceability at the execution boundary.</li>
+        <li>Explicit lifecycle states.</li>
+        <li>Operational honesty.</li>
+      </ol>
+
+      <h3>Non-Goals</h3>
+      <div class="grid two">
+        <div>
+          <h4>Phase 1</h4>
+          <ul>
+            <li>No web UI</li>
+            <li>No SSE requirement for correctness</li>
+            <li>No multi-tenant billing system</li>
+            <li>No advanced auth provider integration</li>
+            <li>No human-in-the-loop workflow orchestration</li>
+            <li>No vector memory layer</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Phase 2</h4>
+          <ul>
+            <li>No UI-owned execution state</li>
+            <li>No client-side event reconciliation heuristics</li>
+            <li>No bespoke stream protocol separate from the API event model</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-card">
+      <h2>Architecture Overview</h2>
+      <p>The rewritten platform has four runtime roles:</p>
+      <ol>
+        <li><strong>API service</strong>: accepts commands, exposes reads, serves SSE, never owns long-running execution.</li>
+        <li><strong>Executor</strong>: consumes pending runs, invokes the agent stack, emits run events, finalizes outcomes.</li>
+        <li><strong>Database</strong>: stores domain records, event log, attachments, and read-model projections.</li>
+        <li><strong>Clients</strong>: scripts and tests in phase 1, web UI in phase 2.</li>
+      </ol>
+
+      <h3>High-Level Flow</h3>
+      <pre><code>Client submits turn
+  -&gt; API persists conversation turn + run request
+  -&gt; API marks run pending
+  -&gt; API enqueues work
+  -&gt; Executor claims run
+  -&gt; Executor emits ordered run events
+  -&gt; Executor writes final artifacts and terminal status
+  -&gt; Clients query state or attach to SSE event stream</code></pre>
+
+      <h3>Transport Model</h3>
+      <ul>
+        <li>Point-in-time HTTP reads</li>
+        <li>Paginated event reads</li>
+        <li>SSE tailing of the event stream</li>
+      </ul>
+      <p>All three read from the same persisted state model.</p>
+    </section>
+
+    <section class="section-card">
+      <h2>Domain Model</h2>
+
+      <h3>Conversation</h3>
+      <ul>
+        <li><code>id</code></li>
+        <li><code>created_at</code></li>
+        <li><code>updated_at</code></li>
+        <li><code>title</code></li>
+        <li><code>archived_at</code> nullable</li>
+        <li><code>metadata_json</code></li>
+      </ul>
+
+      <h3>Turn</h3>
+      <ul>
+        <li><code>id</code></li>
+        <li><code>conversation_id</code></li>
+        <li><code>sequence</code></li>
+        <li><code>role</code></li>
+        <li><code>content_text</code></li>
+        <li><code>research_mode</code></li>
+        <li><code>submitted_at</code></li>
+        <li><code>metadata_json</code></li>
+      </ul>
+
+      <h3>Attachment</h3>
+      <ul>
+        <li><code>id</code></li>
+        <li><code>turn_id</code></li>
+        <li><code>name</code></li>
+        <li><code>mime_type</code></li>
+        <li><code>size_bytes</code></li>
+        <li><code>sha256</code></li>
+        <li><code>text_content</code></li>
+        <li><code>order_index</code></li>
+        <li><code>created_at</code></li>
+      </ul>
+
+      <h3>Run</h3>
+      <ul>
+        <li><code>id</code></li>
+        <li><code>conversation_id</code></li>
+        <li><code>turn_id</code></li>
+        <li><code>attempt_number</code></li>
+        <li><code>status</code></li>
+        <li><code>requested_model</code></li>
+        <li><code>requested_research_mode</code></li>
+        <li><code>requested_at</code></li>
+        <li><code>started_at</code> nullable</li>
+        <li><code>completed_at</code> nullable</li>
+        <li><code>error_code</code> nullable</li>
+        <li><code>error_message</code> nullable</li>
+        <li><code>cancellation_reason</code> nullable</li>
+        <li><code>executor_lease_owner</code> nullable</li>
+        <li><code>executor_lease_expires_at</code> nullable</li>
+        <li><code>metadata_json</code></li>
+      </ul>
+
+      <h4>Allowed statuses</h4>
+      <ul class="pill-list">
+        <li><code>pending</code></li>
+        <li><code>claimed</code></li>
+        <li><code>running</code></li>
+        <li><code>completed</code></li>
+        <li><code>failed</code></li>
+        <li><code>cancel_requested</code></li>
+        <li><code>cancelled</code></li>
+        <li><code>timed_out</code></li>
+      </ul>
+
+      <h3>Run Event</h3>
+      <ul>
+        <li><code>id</code></li>
+        <li><code>run_id</code></li>
+        <li><code>sequence</code></li>
+        <li><code>event_type</code></li>
+        <li><code>occurred_at</code></li>
+        <li><code>payload_json</code></li>
+      </ul>
+      <p>Use a unique constraint on <code>(run_id, sequence)</code>. Sequence must come from persistence, not application-side <code>max(sequence) + 1</code>.</p>
+
+      <h3>Run Artifact</h3>
+      <ul>
+        <li><code>id</code></li>
+        <li><code>run_id</code></li>
+        <li><code>artifact_type</code></li>
+        <li><code>content_json</code></li>
+        <li><code>created_at</code></li>
+      </ul>
+      <p>Initial artifact types: <code>final_answer</code>, <code>metrics_summary</code>, <code>agent_summary</code>.</p>
+    </section>
+
+    <section class="section-card">
+      <h2>Event Model</h2>
+
+      <h3>Core event types</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Category</th>
+            <th>Examples</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Run lifecycle</td>
+            <td><code>run.created</code>, <code>run.claimed</code>, <code>run.started</code>, <code>run.completed</code></td>
+          </tr>
+          <tr>
+            <td>Progress</td>
+            <td><code>run.progress</code>, <code>run.warning</code>, <code>run.error</code></td>
+          </tr>
+          <tr>
+            <td>Assistant output</td>
+            <td><code>run.message.delta</code>, <code>run.message.completed</code></td>
+          </tr>
+          <tr>
+            <td>Tool activity</td>
+            <td><code>run.tool.started</code>, <code>run.tool.delta</code>, <code>run.tool.completed</code></td>
+          </tr>
+          <tr>
+            <td>Cancellation</td>
+            <td><code>run.cancel_requested</code>, <code>run.cancelled</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Event Envelope</h3>
+      <pre><code>{
+  "id": "evt_123",
+  "run_id": "run_123",
+  "sequence": 17,
+  "event_type": "run.tool.completed",
+  "occurred_at": "2026-05-24T22:00:00Z",
+  "schema_version": 1,
+  "payload": {}
+}</code></pre>
+
+      <h3>Payload examples</h3>
+      <h4><code>run.progress</code></h4>
+      <pre><code>{
+  "label": "Searching for recent filings",
+  "stage": "research",
+  "message": "Cross-checking SEC and company sources."
+}</code></pre>
+
+      <h4><code>run.message.delta</code></h4>
+      <pre><code>{
+  "message_id": "msg_agent_1",
+  "channel": "assistant",
+  "delta_text": "The company reported"
+}</code></pre>
+
+      <h4><code>run.tool.started</code></h4>
+      <pre><code>{
+  "tool_call_id": "tool_1",
+  "tool_name": "internet_search",
+  "input": {
+    "query": "latest SEC filing"
+  }
+}</code></pre>
+
+      <h4><code>run.tool.completed</code></h4>
+      <pre><code>{
+  "tool_call_id": "tool_1",
+  "tool_name": "internet_search",
+  "output": {
+    "query": "latest SEC filing",
+    "results": []
+  }
+}</code></pre>
+    </section>
+
+    <section class="section-card">
+      <h2>Persistence Model</h2>
+      <p><code>run_events</code> is the only canonical trace store.</p>
+      <p>The system must not duplicate the full event stream into a second JSON blob on <code>runs</code>.</p>
+
+      <h3>Read-model rule</h3>
+      <p>Final answer and metrics may be denormalized for efficient reads, but they are explicitly derived from the event stream and terminal run state.</p>
+
+      <h3>Recommended database details</h3>
+      <ul>
+        <li>PostgreSQL primary store</li>
+        <li><code>payload_json</code> as <code>JSONB</code></li>
+        <li><code>metadata_json</code> as <code>JSONB</code></li>
+        <li>Typed timestamps with timezone</li>
+      </ul>
+
+      <h3>Minimum indexes</h3>
+      <ul>
+        <li><code>conversations(created_at desc)</code></li>
+        <li><code>turns(conversation_id, sequence)</code></li>
+        <li><code>runs(conversation_id, requested_at desc)</code></li>
+        <li><code>runs(turn_id, attempt_number)</code></li>
+        <li><code>runs(status, requested_at)</code></li>
+        <li><code>run_events(run_id, sequence)</code></li>
+        <li><code>attachments(turn_id, order_index)</code></li>
+      </ul>
+    </section>
+
+    <section class="section-card">
+      <h2>Execution Model</h2>
+
+      <h3>Phase 1 executor</h3>
+      <p>Phase 1 may use a single-process executor if needed for speed, but the seam must be explicit.</p>
+
+      <h4>Executor responsibilities</h4>
+      <ol>
+        <li>Claim one pending run.</li>
+        <li>Mark it <code>claimed</code>.</li>
+        <li>Emit <code>run.started</code>.</li>
+        <li>Execute the agent.</li>
+        <li>Append events during execution.</li>
+        <li>Write terminal artifacts.</li>
+        <li>Mark terminal status.</li>
+      </ol>
+
+      <h3>Claiming protocol</h3>
+      <ul>
+        <li><code>SELECT ... FOR UPDATE SKIP LOCKED</code></li>
+        <li>Lease ownership columns with expiry</li>
+        <li>Unique attempt semantics enforced in DB</li>
+      </ul>
+
+      <h3>Cancellation</h3>
+      <ol>
+        <li>API marks <code>cancel_requested</code>.</li>
+        <li>Executor checks cooperative cancellation state.</li>
+        <li>Executor emits <code>run.cancel_requested</code>.</li>
+        <li>Executor emits <code>run.cancelled</code> on success.</li>
+      </ol>
+
+      <h3>Timeouts</h3>
+      <ul>
+        <li>Light mode: 2 minutes</li>
+        <li>Standard mode: 10 minutes</li>
+      </ul>
+
+      <h3>Retries</h3>
+      <p>Phase 1 supports explicit retry by creating a new run attempt for the same turn. Automatic retry should be limited to transient infrastructure failures.</p>
+    </section>
+
+    <section class="section-card">
+      <h2>API Design</h2>
+
+      <h3>API conventions</h3>
+      <ul>
+        <li>JSON request and response bodies</li>
+        <li>RFC 3339 timestamps</li>
+        <li>Opaque stable ids</li>
+        <li>Typed error envelope</li>
+        <li>Cursor- or sequence-based pagination</li>
+      </ul>
+
+      <h3>Error envelope</h3>
+      <pre><code>{
+  "error": {
+    "code": "run_not_found",
+    "message": "Run not found.",
+    "details": {}
+  }
+}</code></pre>
+
+      <h3>Phase 1 API surface</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Endpoint</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>GET /health</code></td>
+            <td>Liveness check</td>
+          </tr>
+          <tr>
+            <td><code>POST /v1/conversations</code></td>
+            <td>Create an empty conversation</td>
+          </tr>
+          <tr>
+            <td><code>GET /v1/conversations</code></td>
+            <td>List conversations</td>
+          </tr>
+          <tr>
+            <td><code>GET /v1/conversations/{conversation_id}</code></td>
+            <td>Conversation detail</td>
+          </tr>
+          <tr>
+            <td><code>POST /v1/conversations/{conversation_id}/turns</code></td>
+            <td>Create turn, create run, enqueue execution</td>
+          </tr>
+          <tr>
+            <td><code>GET /v1/conversations/{conversation_id}/turns</code></td>
+            <td>List turns in order</td>
+          </tr>
+          <tr>
+            <td><code>GET /v1/conversations/{conversation_id}/turns/{turn_id}</code></td>
+            <td>Turn detail and latest run summary</td>
+          </tr>
+          <tr>
+            <td><code>GET /v1/runs/{run_id}</code></td>
+            <td>Run status and terminal summary</td>
+          </tr>
+          <tr>
+            <td><code>POST /v1/runs/{run_id}/cancel</code></td>
+            <td>Request cancellation</td>
+          </tr>
+          <tr>
+            <td><code>POST /v1/runs/{run_id}/retry</code></td>
+            <td>Create retry attempt</td>
+          </tr>
+          <tr>
+            <td><code>GET /v1/runs/{run_id}/events</code></td>
+            <td>Ordered historical events as JSON</td>
+          </tr>
+          <tr>
+            <td><code>GET /v1/runs/{run_id}/events/stream</code></td>
+            <td>Historical plus live events over SSE</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Turn creation response</h3>
+      <pre><code>{
+  "conversation_id": "conv_123",
+  "turn_id": "turn_123",
+  "run_id": "run_123",
+  "status": "pending",
+  "requested_at": "2026-05-24T22:00:00Z"
+}</code></pre>
+
+      <h3>SSE rule</h3>
+      <p>Use a single SSE event name, <code>run_event</code>, and keep the semantic event type inside the JSON payload. That keeps JSON history and SSE structurally identical.</p>
+    </section>
+
+    <section class="section-card">
+      <h2>Phase 1 Service Decomposition</h2>
+      <div class="grid two">
+        <div>
+          <h3>Command services</h3>
+          <ul>
+            <li><code>ConversationCommandService</code></li>
+            <li><code>TurnCommandService</code></li>
+            <li><code>RunCommandService</code></li>
+            <li><code>CancellationService</code></li>
+          </ul>
+
+          <h3>Query services</h3>
+          <ul>
+            <li><code>ConversationQueryService</code></li>
+            <li><code>TurnQueryService</code></li>
+            <li><code>RunQueryService</code></li>
+            <li><code>RunEventQueryService</code></li>
+            <li><code>AdminQueryService</code></li>
+          </ul>
+        </div>
+        <div>
+          <h3>Persistence components</h3>
+          <ul>
+            <li><code>ConversationRepository</code></li>
+            <li><code>TurnRepository</code></li>
+            <li><code>RunRepository</code></li>
+            <li><code>RunEventRepository</code></li>
+            <li><code>AttachmentRepository</code></li>
+            <li><code>ArtifactRepository</code></li>
+          </ul>
+
+          <h3>Execution and streaming</h3>
+          <ul>
+            <li><code>RunDispatcher</code></li>
+            <li><code>RunExecutor</code></li>
+            <li><code>AgentAdapter</code></li>
+            <li><code>ToolAdapter</code></li>
+            <li><code>UsageAggregator</code></li>
+            <li><code>RunEventStreamer</code></li>
+            <li><code>RunEventBroadcaster</code></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-card">
+      <h2>Agent Integration</h2>
+      <p>The <code>deepagents</code> integration must be isolated behind one adapter.</p>
+
+      <h3>AgentAdapter responsibilities</h3>
+      <ol>
+        <li>Build agent request payload.</li>
+        <li>Normalize stream parts into stable internal events.</li>
+        <li>Aggregate usage across all model invocations.</li>
+        <li>Normalize tool call envelopes.</li>
+        <li>Isolate library-specific tuple or object-shape quirks.</li>
+      </ol>
+
+      <h3>Usage accounting</h3>
+      <p>Usage must be summed across the entire run, not just the final message.</p>
+
+      <h3>Tool accounting</h3>
+      <p>Tool counts must be derived from normalized tool events, not loose message-role checks.</p>
+    </section>
+
+    <section class="section-card">
+      <h2>Auth, Validation, and Observability</h2>
+
+      <h3>Authentication</h3>
+      <p>Phase 1 should include at least a basic auth boundary.</p>
+      <ul>
+        <li>Minimum acceptable: static bearer token</li>
+        <li>Preferred: principal table with API keys</li>
+      </ul>
+
+      <h3>Validation</h3>
+      <ul>
+        <li>Pydantic request and response models on the backend</li>
+        <li>Startup validation for required secrets</li>
+        <li>Attachment validation before execution</li>
+        <li>Phase 2 runtime API validation on the frontend</li>
+      </ul>
+
+      <h3>Structured logs</h3>
+      <ul>
+        <li><code>conversation_id</code></li>
+        <li><code>turn_id</code></li>
+        <li><code>run_id</code></li>
+        <li><code>status</code></li>
+        <li><code>event_sequence</code> when relevant</li>
+        <li><code>executor_owner</code> when relevant</li>
+      </ul>
+
+      <h3>Metrics</h3>
+      <ul>
+        <li>Runs created, completed, failed, cancelled</li>
+        <li>Queue depth</li>
+        <li>Run duration</li>
+        <li>Event append latency</li>
+        <li>Event stream attach count</li>
+        <li>Token usage by model</li>
+        <li>Tool call counts by tool</li>
+      </ul>
+
+      <h3>Operations</h3>
+      <ul>
+        <li>Alembic from day 1</li>
+        <li>No <code>create_all()</code> on startup</li>
+        <li>Explicit retention policy for events and attachments</li>
+      </ul>
+    </section>
+
+    <section class="section-card">
+      <h2>Phase 2 UI and SSE Design</h2>
+
+      <h3>UI principles</h3>
+      <ul>
+        <li>The UI consumes HTTP queries for baseline state.</li>
+        <li>The UI consumes SSE for live tailing.</li>
+        <li>The UI must not invent execution state that contradicts backend state.</li>
+      </ul>
+
+      <h3>Recommended frontend modules</h3>
+      <ul>
+        <li><code>ConversationListPage</code></li>
+        <li><code>ConversationView</code></li>
+        <li><code>MessageComposer</code></li>
+        <li><code>RunTimeline</code></li>
+        <li><code>RunStatusBanner</code></li>
+        <li><code>AttachmentPicker</code></li>
+        <li><code>AdminDashboard</code></li>
+      </ul>
+
+      <h3>Recommended hooks</h3>
+      <ul>
+        <li><code>useConversationList</code></li>
+        <li><code>useConversation</code></li>
+        <li><code>useCreateTurn</code></li>
+        <li><code>useRun</code></li>
+        <li><code>useRunEvents</code></li>
+        <li><code>useRunEventStream</code></li>
+      </ul>
+
+      <h3>SSE contract</h3>
+      <p>The UI should call:</p>
+      <ul>
+        <li><code>GET /v1/runs/{run_id}/events</code> for historical state</li>
+        <li><code>GET /v1/runs/{run_id}/events/stream?after_sequence=N</code> for live continuation</li>
+      </ul>
+      <p>The UI should not need merge heuristics based on title, content equality, or tool-query extraction from raw strings.</p>
+
+      <h3>Event rendering guidance</h3>
+      <ul>
+        <li><code>run.progress</code> -> progress card</li>
+        <li><code>run.tool.started</code> -> tool activity row</li>
+        <li><code>run.tool.completed</code> -> expandable tool result</li>
+        <li><code>run.message.delta</code> -> incremental assistant body</li>
+        <li><code>run.completed</code> -> terminal state and final answer</li>
+      </ul>
+    </section>
+
+    <section class="section-card">
+      <h2>Suggested Phase Breakdown</h2>
+      <h3>Phase 1A: Domain and schema foundation</h3>
+      <ul>
+        <li>New schema</li>
+        <li>Alembic migrations</li>
+        <li>Command and query structure</li>
+        <li>Run event model</li>
+      </ul>
+
+      <h3>Phase 1B: API-only execution</h3>
+      <ul>
+        <li>Conversation, turn, run, and event APIs</li>
+        <li>Basic executor</li>
+        <li>Cancellation</li>
+        <li>Retry</li>
+        <li>Admin endpoints</li>
+        <li>Integration tests</li>
+      </ul>
+
+      <h3>Phase 1C: API hardening</h3>
+      <ul>
+        <li>Auth boundary</li>
+        <li>Observability</li>
+        <li>Retention jobs</li>
+        <li>Lease handling</li>
+        <li>Failure recovery policy</li>
+      </ul>
+
+      <h3>Phase 2A: Minimal operator UI</h3>
+      <ul>
+        <li>Conversation list</li>
+        <li>Conversation detail</li>
+        <li>Run timeline</li>
+        <li>Final answer rendering</li>
+        <li>SSE stream attachment</li>
+      </ul>
+
+      <h3>Phase 2B: UX and admin improvements</h3>
+      <ul>
+        <li>Better progress rendering</li>
+        <li>Attachment UX</li>
+        <li>Retry and cancel controls</li>
+        <li>Admin dashboards</li>
+      </ul>
+    </section>
+
+    <section class="section-card">
+      <h2>Testing Strategy</h2>
+      <h3>Phase 1</h3>
+      <ul>
+        <li>Run lifecycle transitions</li>
+        <li>Event append ordering</li>
+        <li>Cancellation state transitions</li>
+        <li>Usage aggregation</li>
+        <li>Tool call normalization</li>
+        <li>Create conversation and turn</li>
+        <li>Run executes to completion</li>
+        <li>Historical events query ordering</li>
+        <li>SSE replay and live tailing</li>
+        <li>Retry and cancel flows</li>
+      </ul>
+
+      <h3>Failure tests</h3>
+      <ul>
+        <li>Executor crash before terminalization</li>
+        <li>Duplicate claim attempts</li>
+        <li>Malformed agent adapter stream payload</li>
+        <li>DB transient failure during event append</li>
+      </ul>
+
+      <h3>Phase 2</h3>
+      <ul>
+        <li>Render completed conversation from HTTP only</li>
+        <li>Attach to in-progress run via SSE</li>
+        <li>Reconnect using <code>after_sequence</code></li>
+        <li>Cancel from UI and observe terminal update</li>
+      </ul>
+    </section>
+
+    <section class="section-card">
+      <h2>Open Questions and Recommended Defaults</h2>
+
+      <h3>Open questions</h3>
+      <ol>
+        <li>Should assistant final answers be stored as messages, artifacts, or both?</li>
+        <li>Should phase 1 support multiple concurrent runs per conversation, or exactly one active run?</li>
+        <li>Do we want server-side conversation summarization in phase 1?</li>
+        <li>Should the executor use PostgreSQL-backed claiming only, or adopt a real queue immediately?</li>
+        <li>What retention policy applies to sensitive attachments?</li>
+      </ol>
+
+      <h3>Recommended defaults</h3>
+      <ol>
+        <li>One active run per conversation in phase 1</li>
+        <li><code>run_events</code> as the only canonical trace store</li>
+        <li>Alembic from day 1</li>
+        <li>API key or bearer-token auth from day 1</li>
+        <li>OpenAPI-generated client types before phase 2</li>
+        <li>One stable event envelope for JSON history and SSE</li>
+        <li>Agent integration isolated behind <code>AgentAdapter</code></li>
+      </ol>
+
+      <h3>Success criteria</h3>
+      <ol>
+        <li>A run completes correctly without any UI connected.</li>
+        <li>SSE can attach, detach, and reattach without changing execution behavior.</li>
+        <li>No duplicate trace store exists.</li>
+        <li>Final answer and metrics can be rebuilt from canonical persisted state.</li>
+        <li>Phase 2 frontend can be implemented without protocol-merging heuristics.</li>
+        <li>Executor implementation can change without API contract changes.</li>
+        <li>Integration tests cover the full phase 1 workflow without browser dependencies.</li>
+      </ol>
+    </section>
+  </div>
+</body>
+</html>
