@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CODEX 5.5 Revised Plan</title>
+  <style>
+    :root {
+      --bg: #f7f8f5;
+      --panel: #ffffff;
+      --panel-soft: #f0f5f1;
+      --text: #17201b;
+      --muted: #5a665f;
+      --line: #d7ded8;
+      --accent: #0f766e;
+      --accent-2: #a0491d;
+      --code-bg: #18221e;
+      --code-text: #edf7f1;
+      --shadow: 0 18px 60px rgba(24, 34, 30, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        linear-gradient(90deg, rgba(15, 118, 110, 0.06) 1px, transparent 1px),
+        linear-gradient(180deg, #fbfcf8 0%, var(--bg) 42%, #eef3ef 100%);
+      background-size: 32px 32px, auto;
+      font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+      line-height: 1.62;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 24px;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 20px 72px;
+    }
+
+    @media (min-width: 1040px) {
+      .layout {
+        grid-template-columns: 260px minmax(0, 1fr);
+        align-items: start;
+      }
+    }
+
+    .toc {
+      position: sticky;
+      top: 20px;
+      display: none;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.9);
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+
+    @media (min-width: 1040px) {
+      .toc {
+        display: block;
+      }
+    }
+
+    .toc h2 {
+      margin: 0 0 12px;
+      padding: 0;
+      border: 0;
+      font-size: 0.95rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .toc a {
+      display: block;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.94rem;
+      padding: 6px 0;
+      border-top: 1px solid transparent;
+    }
+
+    .toc a:hover {
+      color: var(--accent);
+    }
+
+    main {
+      min-width: 0;
+    }
+
+    .hero {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: linear-gradient(135deg, #ffffff 0%, #edf7f3 100%);
+      box-shadow: var(--shadow);
+      padding: clamp(24px, 4vw, 44px);
+      margin-bottom: 22px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--accent);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    h1, h2, h3, h4 {
+      line-height: 1.2;
+      color: #111814;
+    }
+
+    h1 {
+      margin: 0 0 16px;
+      max-width: 880px;
+      font-size: clamp(2.2rem, 5vw, 4rem);
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 36px 0 14px;
+      padding-top: 24px;
+      border-top: 1px solid var(--line);
+      font-size: clamp(1.55rem, 3vw, 2.1rem);
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 26px 0 10px;
+      font-size: 1.22rem;
+      letter-spacing: 0;
+    }
+
+    h4 {
+      margin: 18px 0 8px;
+      font-size: 1rem;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    .lead {
+      max-width: 850px;
+      color: var(--muted);
+      font-size: 1.08rem;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: var(--shadow);
+      padding: clamp(18px, 3vw, 28px);
+      margin: 18px 0;
+    }
+
+    .callout {
+      border-left: 4px solid var(--accent);
+      background: var(--panel-soft);
+      padding: 14px 16px;
+      border-radius: 8px;
+      margin: 18px 0;
+    }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    @media (min-width: 760px) {
+      .grid.two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .grid.three {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    ul, ol {
+      padding-left: 22px;
+      margin: 10px 0 16px;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--panel);
+      margin: 16px 0 22px;
+      font-size: 0.96rem;
+    }
+
+    th, td {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #edf4ef;
+      color: #24342d;
+      font-size: 0.84rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    code {
+      font-family: "Cascadia Code", Consolas, "Courier New", monospace;
+      background: #e9f0ec;
+      border: 1px solid #d7e0da;
+      border-radius: 6px;
+      padding: 1px 5px;
+      font-size: 0.9em;
+    }
+
+    pre {
+      overflow-x: auto;
+      background: var(--code-bg);
+      color: var(--code-text);
+      border-radius: 12px;
+      padding: 16px;
+      border: 1px solid #26342e;
+      margin: 14px 0 20px;
+    }
+
+    pre code {
+      background: transparent;
+      border: 0;
+      padding: 0;
+      color: inherit;
+    }
+
+    .mermaid-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 16px;
+      margin: 16px 0 24px;
+      box-shadow: 0 10px 34px rgba(24, 34, 30, 0.05);
+    }
+
+    .mermaid {
+      min-width: 620px;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0 18px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #f8fbf8;
+      padding: 6px 10px;
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 0.84rem;
+    }
+
+    .decision {
+      border-left: 4px solid var(--accent-2);
+      padding-left: 12px;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="toc">
+      <h2>Plan</h2>
+      <a href="#shape">High-Level Shape</a>
+      <a href="#simple">Keep It Simple</a>
+      <a href="#phase1">Phase 1 Loop</a>
+      <a href="#phases">System Phases</a>
+      <a href="#domain">Durable Domain</a>
+      <a href="#lifecycle">Run Lifecycle</a>
+      <a href="#reads">Read Paths</a>
+      <a href="#decisions">Decisions</a>
+      <a href="#api">API Surface</a>
+      <a href="#execution">Execution</a>
+      <a href="#layout">Module Layout</a>
+      <a href="#implementation">Implementation</a>
+      <a href="#testing">Testing</a>
+    </aside>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">CODEX 5.5 Revised Plan</div>
+        <h1>API-first rewrite with durable execution and event-log delivery</h1>
+        <p class="lead">
+          This plan reconciles the Codex and Claude rewrite specs into a simpler implementation path:
+          build the execution system first, expose it through REST and event polling, then add UI and
+          SSE as views over the same persisted event log.
+        </p>
+      </section>
+
+      <section id="shape" class="card">
+        <h2>High-Level Shape</h2>
+        <p>
+          At the highest level, this is not a chat UI with a backend. It is an execution system with optional clients.
+          Clients create work, the executor performs work, and every observable step is persisted before any client sees it.
+        </p>
+
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+flowchart LR
+    Client["Phase 1 Client<br/>curl, tests, scripts"] --> API["API Service"]
+    UI["Phase 2 UI<br/>REST + SSE"] --> API
+    API --> DB[("PostgreSQL<br/>durable state + event log")]
+    Executor["Executor<br/>agent runner"] --> DB
+    Executor --> Agent["AgentAdapter<br/>DeepAgents + tools"]
+    Agent --> Executor
+    API -. "Phase 2 only:<br/>LISTEN/NOTIFY wakeups" .-> DB
+          </pre>
+        </div>
+
+        <div class="grid two">
+          <div>
+            <h3>Responsibilities</h3>
+            <ul>
+              <li>Clients submit turns and read state.</li>
+              <li>API validates requests, writes intent, and serves reads.</li>
+              <li>Executor claims runs and writes events.</li>
+              <li>PostgreSQL is the durable coordination point.</li>
+              <li>AgentAdapter contains external library behavior.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Core promise</h3>
+            <p>
+              Disconnecting a browser, test runner, or SSE stream must not change run execution. Delivery is a projection;
+              execution is owned by the executor and recorded in PostgreSQL.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="simple" class="card">
+        <h2>Keep It Simple</h2>
+        <p>These rules keep the rewrite from turning into a distributed platform before the core loop is proven.</p>
+        <ol>
+          <li>Build phase 1 without a frontend.</li>
+          <li>Build phase 1 without SSE.</li>
+          <li>Use PostgreSQL as the only coordination dependency at first.</li>
+          <li>Use one event table as the trace source of truth.</li>
+          <li>Use <code>run_events.id</code> as the cursor.</li>
+          <li>Allow one active run per conversation in phase 1.</li>
+          <li>Keep the executor in-process only if it can later move out without changing client APIs.</li>
+          <li>Prefer explicit SQL read queries over premature read-model tables.</li>
+          <li>Add artifacts only for terminal outputs that simplify reads.</li>
+          <li>Do not add Redis, Celery, WebSockets, vector memory, or multi-user billing in the first rewrite pass.</li>
+        </ol>
+      </section>
+
+      <section id="phase1" class="card">
+        <h2>Minimum Viable Phase 1</h2>
+        <p>The smallest useful version is deliberately narrow.</p>
+        <ol>
+          <li>Create a conversation.</li>
+          <li>Create a turn.</li>
+          <li>Create one pending run for that turn.</li>
+          <li>Execute the run in the background.</li>
+          <li>Persist typed events to <code>run_events</code>.</li>
+          <li>Poll events by cursor.</li>
+          <li>Read final answer and metrics after completion.</li>
+        </ol>
+
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+flowchart TD
+    A["POST /conversations"] --> B["POST /conversations/{id}/turns"]
+    B --> C["Return 202 + run_id"]
+    C --> D["Executor runs agent"]
+    D --> E["Append events"]
+    E --> F["Client polls /runs/{id}/events"]
+    D --> G["Write final artifacts"]
+    G --> H["Client reads /runs/{id}"]
+          </pre>
+        </div>
+
+        <div class="grid two">
+          <div>
+            <h3>Required first</h3>
+            <ul>
+              <li>Alembic schema</li>
+              <li>Settings validation</li>
+              <li>Stub agent adapter for tests</li>
+              <li>Real agent adapter after lifecycle works</li>
+              <li><code>GET /runs/{id}/events</code></li>
+              <li><code>GET /runs/{id}</code></li>
+              <li>Startup handling for active runs</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Allowed to defer</h3>
+            <ul>
+              <li>SSE</li>
+              <li>Browser UI</li>
+              <li>Generated TypeScript types</li>
+              <li>Distributed worker process</li>
+              <li>Lease-based recovery</li>
+              <li>Event batching</li>
+              <li>Advanced admin analytics</li>
+              <li>Conversation summarization</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="phases" class="card">
+        <h2>System Phases</h2>
+        <h3>Phase 1: API-only execution</h3>
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+sequenceDiagram
+    participant C as Client
+    participant A as API
+    participant D as PostgreSQL
+    participant E as Executor
+    participant G as AgentAdapter
+
+    C->>A: POST /conversations
+    A->>D: insert conversation
+    A-->>C: conversation id
+
+    C->>A: POST /conversations/{id}/turns
+    A->>D: insert turn, attachments, pending run
+    A-->>C: 202 Accepted + run id
+
+    E->>D: claim pending run
+    E->>D: append run.started
+    E->>G: execute agent
+    G-->>E: normalized events
+    E->>D: append run_events
+    E->>D: write artifacts + mark completed
+
+    C->>A: GET /runs/{run_id}/events?after_id=N
+    A->>D: read events after cursor
+    A-->>C: events + run_status
+
+    C->>A: GET /runs/{run_id}
+    A->>D: read final state
+    A-->>C: answer + metrics
+          </pre>
+        </div>
+
+        <h3>Phase 2: SSE over the same event log</h3>
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+sequenceDiagram
+    participant UI as UI
+    participant A as API SSE Endpoint
+    participant D as PostgreSQL
+    participant E as Executor
+
+    UI->>A: GET /runs/{run_id}/events/stream?after_id=N
+    A->>D: read persisted events after N
+    A-->>UI: replay run_event messages
+    A->>D: LISTEN run event wakeups
+
+    E->>D: insert run_event
+    E->>D: NOTIFY run channel
+    D-->>A: wakeup notification
+    A->>D: read newly persisted events
+    A-->>UI: run_event
+
+    E->>D: write terminal state
+    E->>D: NOTIFY run channel
+    A->>D: read terminal state
+    A-->>UI: done
+          </pre>
+        </div>
+      </section>
+
+      <section id="domain" class="card">
+        <h2>Durable Domain</h2>
+        <p>The domain has five durable concepts. The important split is <code>turns -> runs</code>: a user submission is stable, while execution attempts can be retried.</p>
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+erDiagram
+    conversations ||--o{ turns : contains
+    turns ||--o{ attachments : has
+    turns ||--o{ runs : attempts
+    runs ||--o{ run_events : emits
+    runs ||--o{ run_artifacts : produces
+
+    conversations {
+        uuid id
+        uuid owner_id
+        timestamptz created_at
+        timestamptz updated_at
+        text title
+    }
+
+    turns {
+        uuid id
+        uuid conversation_id
+        int position
+        text user_message
+        text research_mode
+    }
+
+    runs {
+        uuid id
+        uuid turn_id
+        int attempt_number
+        text status
+        text requested_model
+        timestamptz requested_at
+        timestamptz completed_at
+    }
+
+    run_events {
+        bigint id
+        uuid run_id
+        text event_type
+        jsonb payload
+        timestamptz created_at
+    }
+
+    run_artifacts {
+        uuid id
+        uuid run_id
+        text artifact_type
+        jsonb content
+    }
+          </pre>
+        </div>
+
+        <h3>Tables</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Table</th>
+              <th>Purpose</th>
+              <th>Key design choice</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>conversations</code></td>
+              <td>Durable thread</td>
+              <td>Container only; no transient run state</td>
+            </tr>
+            <tr>
+              <td><code>turns</code></td>
+              <td>User submission</td>
+              <td>Stable history item, retryable through runs</td>
+            </tr>
+            <tr>
+              <td><code>runs</code></td>
+              <td>Execution attempt</td>
+              <td>Owns status, attempt number, timestamps, errors</td>
+            </tr>
+            <tr>
+              <td><code>run_events</code></td>
+              <td>Canonical trace log</td>
+              <td><code>BIGSERIAL id</code> is the cursor</td>
+            </tr>
+            <tr>
+              <td><code>run_artifacts</code></td>
+              <td>Terminal derived outputs</td>
+              <td>Final answer and metrics live here</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="lifecycle" class="card">
+        <h2>Run Lifecycle</h2>
+        <p>The API can request cancellation, but the executor owns terminal status.</p>
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+stateDiagram-v2
+    [*] --> pending
+    pending --> claimed
+    claimed --> running
+    running --> completed
+    running --> failed
+    running --> timed_out
+    running --> cancel_requested
+    pending --> cancel_requested
+    cancel_requested --> cancelled
+    claimed --> failed
+    completed --> [*]
+    failed --> [*]
+    timed_out --> [*]
+    cancelled --> [*]
+          </pre>
+        </div>
+
+        <div class="callout">
+          Phase 1 can mark active runs failed on process restart. Lease-based recovery is useful later, but it should not block the first API-only rewrite.
+        </div>
+      </section>
+
+      <section id="reads" class="card">
+        <h2>Read Paths</h2>
+        <p>There are three read shapes. They should stay separate.</p>
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+flowchart TB
+    API["API Reads"] --> ConversationRead["Conversation reads<br/>summaries + latest run"]
+    API --> RunRead["Run reads<br/>status + artifacts"]
+    API --> EventRead["Event reads<br/>cursor over run_events"]
+
+    ConversationRead --> Tables[("turns, runs, artifacts")]
+    RunRead --> Tables
+    EventRead --> Events[("run_events")]
+          </pre>
+        </div>
+        <p>
+          Conversation reads do not include full event history. Event reads do not reconstruct final answers.
+          Run reads do not return an unbounded timeline.
+        </p>
+      </section>
+
+      <section id="decisions" class="card">
+        <h2>Executive Decisions</h2>
+        <div class="grid two">
+          <div class="decision">
+            <h3>Keep from Codex</h3>
+            <ol>
+              <li>Separate <code>conversation</code>, <code>turn</code>, <code>run</code>, <code>event</code>, and <code>artifact</code>.</li>
+              <li>Model <code>run</code> as an execution attempt.</li>
+              <li>Use one stable event envelope.</li>
+              <li>Isolate <code>deepagents</code> behind <code>AgentAdapter</code>.</li>
+              <li>Generate frontend types from OpenAPI before phase 2.</li>
+            </ol>
+          </div>
+          <div class="decision">
+            <h3>Keep from Claude</h3>
+            <ol>
+              <li>Phase 1 has no UI or SSE requirement.</li>
+              <li>Phase 1 uses cursor polling for progress.</li>
+              <li>No in-memory subscriber queues.</li>
+              <li>Event cursor is DB-generated.</li>
+              <li>Conversation detail excludes full event history.</li>
+              <li>Startup fails on missing secrets.</li>
+            </ol>
+          </div>
+        </div>
+
+        <h3>Revised defaults</h3>
+        <div class="badge-row">
+          <span class="badge">separate turns and runs</span>
+          <span class="badge">run_events.id cursor</span>
+          <span class="badge">phase 1 no SSE</span>
+          <span class="badge">phase 2 LISTEN/NOTIFY</span>
+          <span class="badge">one active run</span>
+          <span class="badge">Alembic first</span>
+        </div>
+      </section>
+
+      <section id="api" class="card">
+        <h2>API Surface</h2>
+        <p>Base path: <code>/api/v1</code></p>
+        <table>
+          <thead>
+            <tr>
+              <th>Endpoint</th>
+              <th>Phase</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>POST /conversations</code></td>
+              <td>1</td>
+              <td>Create conversation</td>
+            </tr>
+            <tr>
+              <td><code>GET /conversations</code></td>
+              <td>1</td>
+              <td>List conversations with latest run summary</td>
+            </tr>
+            <tr>
+              <td><code>GET /conversations/{id}</code></td>
+              <td>1</td>
+              <td>Conversation detail without event history</td>
+            </tr>
+            <tr>
+              <td><code>POST /conversations/{id}/turns</code></td>
+              <td>1</td>
+              <td>Create turn, attachments, and initial run</td>
+            </tr>
+            <tr>
+              <td><code>GET /turns/{id}</code></td>
+              <td>1</td>
+              <td>Fetch turn with latest run summary</td>
+            </tr>
+            <tr>
+              <td><code>POST /turns/{id}/retry</code></td>
+              <td>1</td>
+              <td>Create a new run attempt</td>
+            </tr>
+            <tr>
+              <td><code>GET /runs/{id}</code></td>
+              <td>1</td>
+              <td>Fetch run status, final answer, metrics, errors</td>
+            </tr>
+            <tr>
+              <td><code>POST /runs/{id}/cancel</code></td>
+              <td>1</td>
+              <td>Request cooperative cancellation</td>
+            </tr>
+            <tr>
+              <td><code>GET /runs/{id}/events</code></td>
+              <td>1</td>
+              <td>Fetch persisted events by <code>after_id</code></td>
+            </tr>
+            <tr>
+              <td><code>GET /runs/{id}/events/stream</code></td>
+              <td>2</td>
+              <td>SSE replay and live tail over the same event log</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Error envelope</h3>
+        <pre><code>{
+  "error": {
+    "code": "run_not_found",
+    "message": "Run not found.",
+    "status": 404,
+    "details": {}
+  }
+}</code></pre>
+
+        <h3>Event envelope</h3>
+        <pre><code>{
+  "id": 143,
+  "run_id": "run_uuid",
+  "event_type": "tool.search.completed",
+  "schema_version": 1,
+  "payload": {},
+  "created_at": "2026-05-24T10:01:05Z"
+}</code></pre>
+      </section>
+
+      <section id="execution" class="card">
+        <h2>Execution Design</h2>
+        <p>Phase 1 can use an in-process executor, but it must communicate through PostgreSQL and never through in-memory subscriber queues.</p>
+
+        <h3>Allowed phase 1 state</h3>
+        <ul>
+          <li><code>_running_tasks</code> for local task management</li>
+          <li>executor id for ownership and logs</li>
+        </ul>
+
+        <h3>Disallowed phase 1 state</h3>
+        <ul>
+          <li>per-subscriber queues</li>
+          <li>event buffers as source of truth</li>
+          <li>HTTP request objects participating in execution</li>
+        </ul>
+
+        <h3>Executor lifecycle</h3>
+        <ol>
+          <li>Transition <code>pending</code> to <code>claimed</code>.</li>
+          <li>Transition <code>claimed</code> to <code>running</code>.</li>
+          <li>Append <code>run.started</code>.</li>
+          <li>Load conversation history.</li>
+          <li>Invoke <code>AgentAdapter</code>.</li>
+          <li>Append normalized events.</li>
+          <li>Write final artifacts.</li>
+          <li>Append terminal event.</li>
+          <li>Transition to terminal status.</li>
+        </ol>
+
+        <h3>AgentAdapter contract</h3>
+        <ul>
+          <li>Build prompt context from turn, attachments, and history.</li>
+          <li>Normalize stream output into internal event objects.</li>
+          <li>Aggregate token usage across all model calls.</li>
+          <li>Count tool calls by tool type.</li>
+          <li>Return final answer and metrics.</li>
+        </ul>
+      </section>
+
+      <section id="layout" class="card">
+        <h2>Module Layout</h2>
+        <pre><code>backend/
+  src/
+    deepagents_app/
+      api/
+        routes/
+          conversations.py
+          turns.py
+          runs.py
+          admin.py
+        deps.py
+        errors.py
+      core/
+        config.py
+        db.py
+        pricing.py
+        logging.py
+      models/
+        conversation.py
+        turn.py
+        attachment.py
+        run.py
+        run_event.py
+        run_artifact.py
+      repositories/
+        conversation_repo.py
+        turn_repo.py
+        attachment_repo.py
+        run_repo.py
+        run_event_repo.py
+        artifact_repo.py
+      services/
+        conversation_service.py
+        turn_service.py
+        run_service.py
+        cancellation_service.py
+        agent_adapter.py
+        executor.py
+        runner.py
+      schemas/
+        conversations.py
+        turns.py
+        runs.py
+        events.py
+        admin.py
+      main.py
+  alembic/
+  tests/</code></pre>
+        <p>Route modules own HTTP details. Repositories own SQL. Services own orchestration. The adapter owns external agent library behavior.</p>
+      </section>
+
+      <section id="implementation" class="card">
+        <h2>Implementation Sequence</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Phase</th>
+              <th>Deliverables</th>
+              <th>Acceptance</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1A Foundation</td>
+              <td>Models, Alembic, settings validation, error envelope, health</td>
+              <td>App boots only with valid config; migrations create schema</td>
+            </tr>
+            <tr>
+              <td>1B Conversations and turns</td>
+              <td>Conversation APIs, turn creation, attachments, active-run guard</td>
+              <td>Turn creation returns 202; conversation list avoids N+1</td>
+            </tr>
+            <tr>
+              <td>1C Executor and events</td>
+              <td>Runner, executor, event repo, stub adapter, run/event APIs</td>
+              <td>Run completes with no client attached; events query by cursor</td>
+            </tr>
+            <tr>
+              <td>1D Real agent</td>
+              <td>DeepAgents adapter, search normalization, usage aggregation</td>
+              <td>Typed events, correct token totals, search-only search counts</td>
+            </tr>
+            <tr>
+              <td>1E Controls and admin</td>
+              <td>Cancel, retry, admin overview, startup recovery</td>
+              <td>Cancellation and retry reach correct states</td>
+            </tr>
+            <tr>
+              <td>2A SSE</td>
+              <td>Event stream endpoint, LISTEN/NOTIFY, keepalive, done event</td>
+              <td>Replay, tail, terminal close, disconnect-safe execution</td>
+            </tr>
+            <tr>
+              <td>2B UI</td>
+              <td>Generated types, validation, conversation UI, composer, timeline</td>
+              <td>UI consumes REST/SSE without protocol heuristics</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="testing" class="card">
+        <h2>Testing Strategy</h2>
+        <div class="grid three">
+          <div>
+            <h3>Phase 1 unit</h3>
+            <ul>
+              <li>Status transitions</li>
+              <li>Turn position locking</li>
+              <li>Event serialization</li>
+              <li>Cursor pagination</li>
+              <li>Usage aggregation</li>
+              <li>Cancellation state</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Phase 1 integration</h3>
+            <ul>
+              <li>Create conversation</li>
+              <li>Create turn</li>
+              <li>Run with stub adapter</li>
+              <li>Persist event log</li>
+              <li>Create final artifact</li>
+              <li>Retry and cancel</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Phase 2</h3>
+            <ul>
+              <li>SSE replay</li>
+              <li>SSE live tail</li>
+              <li>Done event</li>
+              <li>Reconnect with cursor</li>
+              <li>Disconnected stream keeps run alive</li>
+              <li>UI renders by event type</li>
+            </ul>
+          </div>
+        </div>
+
+        <h3>Success criteria</h3>
+        <ol>
+          <li>A run completes with no UI and no stream connected.</li>
+          <li>Event history is queryable through a cursor.</li>
+          <li>Final answer and metrics are available after completion.</li>
+          <li>SSE can be added without changing execution semantics.</li>
+          <li>Reconnect is event replay after a cursor.</li>
+          <li>No duplicate trace store exists.</li>
+          <li>No frontend protocol heuristics are needed.</li>
+          <li>The executor can later move out of process without changing client APIs.</li>
+        </ol>
+      </section>
+    </main>
+  </div>
+
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "base",
+      securityLevel: "loose",
+      themeVariables: {
+        primaryColor: "#edf7f3",
+        primaryTextColor: "#17201b",
+        primaryBorderColor: "#0f766e",
+        lineColor: "#5a665f",
+        secondaryColor: "#f6efe8",
+        tertiaryColor: "#ffffff",
+        fontFamily: "Georgia, Times New Roman, serif"
+      }
+    });
+  </script>
+</body>
+</html>
