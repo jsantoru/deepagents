@@ -1423,7 +1423,7 @@ function TraceTimeline({ trace, isFinal }: { trace: ChatTraceEvent[]; isFinal?: 
   const orderedTrace = orderTraceEvents(trace)
 
   return (
-    <div className="mt-5 space-y-3 pt-1">
+    <div className="space-y-3 pt-1">
       {orderedTrace.map((event, index) => {
         const display = formatTraceEvent(event)
         if (!display) {
