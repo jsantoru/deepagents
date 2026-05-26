@@ -430,15 +430,22 @@
       overflow-x: auto;
     }
 
-    .mermaid { display: block; width: 100%; }
+    /*
+     * zoom: 2 physically doubles the diagram (text, boxes, arrows).
+     * width: 50% compensates so the zoomed element still fills the wrapper
+     * (50% × zoom(2) = 100% apparent width).
+     * CSS zoom affects layout, so the wrapper expands to fit the taller diagram.
+     */
+    .mermaid {
+      display: block;
+      zoom: 2;
+      width: 50%;
+    }
 
-    /* Force SVG to fill the wrapper — Mermaid sets inline max-width we override */
     .mermaid svg {
       width: 100% !important;
       max-width: none !important;
       height: auto !important;
-      min-height: 120px;
-      font-size: 14px !important;
     }
 
     /* ── Two-column layout for zoom sections ── */
@@ -1858,11 +1865,22 @@ frontend/                    <span class="cm"># Phase 2 only</span>
       secondaryColor: '#161b27',
       tertiaryColor: '#1a1f2e',
       edgeLabelBackground: '#0f1117',
-      fontSize: '16px',
+      fontSize: '18px',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
     },
-    flowchart: { curve: 'basis', padding: 24, useMaxWidth: false },
-    sequence: { actorMargin: 80, messageMargin: 50, mirrorActors: false, useMaxWidth: false },
+    flowchart: { curve: 'basis', padding: 28, nodeSpacing: 60, rankSpacing: 70, useMaxWidth: false },
+    sequence: {
+      actorMargin: 100,
+      messageMargin: 55,
+      mirrorActors: false,
+      useMaxWidth: false,
+      actorFontSize: 18,
+      messageFontSize: 16,
+      noteFontSize: 15,
+      width: 200,
+      height: 60,
+      boxMargin: 16,
+    },
     er: { useMaxWidth: false },
     stateDiagram: { useMaxWidth: false },
   });
