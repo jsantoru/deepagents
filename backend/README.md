@@ -1,3 +1,3 @@
-# DeepAgents Backend
+# Cortex backend
 
-FastAPI service for the DeepAgents chat platform.
+See the repository root README for setup and architecture.

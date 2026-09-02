@@ -1,132 +1,89 @@
-import asyncio
-from collections.abc import Awaitable, Callable, Generator, Sequence
-from pathlib import Path
+from collections.abc import Sequence
 
 import pytest
-from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
-from deepagents_app.api.deps import get_agent_service
-from deepagents_app.core.config import get_settings
-from deepagents_app.core.db import dispose_engine
-from deepagents_app.main import create_application
-from deepagents_app.schemas.chat import ChatRequest, ChatTraceEvent
-from deepagents_app.services.agent_service import AgentRunResult, AgentService
+import cortex.db as db_module
+from cortex.agent.service import AgentRunResult, AgentService, OnEvent
+from cortex.api.deps import get_agent_service, get_extractor
+from cortex.main import create_app
+from cortex.memory.graph import ExtractedEntity, ExtractedRelation
+from cortex.models import Base
+from cortex.schemas import ResearchMode, TraceEvent
 
 
-class StubAgentService(AgentService):
-    invocations: list[list[dict[str, str]]] = []
-    stream_delay_s: float = 0.0
-
-    async def chat(
-        self,
-        payload: ChatRequest,
-        conversation_messages: Sequence[dict[str, str]] | None = None,
-    ) -> AgentRunResult:
-        self.invocations.append(
-            list(conversation_messages)
-            if conversation_messages is not None
-            else [{"role": "user", "content": payload.message}]
-        )
-        return AgentRunResult(
-            answer=f"echo: {payload.message}",
-            trace=[
-                ChatTraceEvent(
-                    id="note-1",
-                    type="assistant",
-                    title="Agent note",
-                    content="Searching for relevant information.",
-                ),
-                ChatTraceEvent(
-                    id="tool-1",
-                    type="tool",
-                    title="Tool call: internet_search",
-                    content='{"query":"hello"}',
-                    metadata={"tool_name": "internet_search"},
-                ),
-                ChatTraceEvent(
-                    id="final-1",
-                    type="final",
-                    title="Final answer",
-                    content=f"echo: {payload.message}",
-                ),
-            ],
-            model_name="openai:gpt-5-nano",
-            input_tokens=11,
-            output_tokens=7,
-            total_tokens=18,
-            search_calls=1,
-            raw_payload={"messages": []},
-        )
-
+class FakeAgentService(AgentService):
     async def stream_chat(
         self,
-        payload: ChatRequest,
-        on_event: Callable[[ChatTraceEvent], Awaitable[None]],
-        conversation_messages: Sequence[dict[str, str]] | None = None,
+        messages: Sequence[dict[str, str]],
+        mode: ResearchMode,
+        memory_context: str,
+        on_event: OnEvent,
     ) -> AgentRunResult:
-        self.invocations.append(
-            list(conversation_messages)
-            if conversation_messages is not None
-            else [{"role": "user", "content": payload.message}]
+        self.last_memory_context = memory_context
+        await on_event(TraceEvent(id="n1", type="note", title="Reasoning", content="thinking"))
+        await on_event(TraceEvent(id="t1", type="tool", title="internet_search", content="{}"))
+        await on_event(
+            TraceEvent(id="t1", type="tool_result", title="internet_search", content="{}")
         )
-        trace = [
-            ChatTraceEvent(
-                id="note-1",
-                type="assistant",
-                title="Agent note",
-                content="Searching for relevant information.",
-            ),
-            ChatTraceEvent(
-                id="tool-1",
-                type="tool",
-                title="Tool call: internet_search",
-                content='{"query":"hello"}',
-                metadata={"tool_name": "internet_search"},
-            ),
-            ChatTraceEvent(
-                id="tool-1",
-                type="tool_result",
-                title="Tool result: internet_search",
-                content='{"results":[{"title":"Example"}]}',
-                metadata={"tool_name": "internet_search"},
-            ),
-            ChatTraceEvent(
-                id="final-1",
-                type="final",
-                title="Final answer",
-                content=f"echo: {payload.message}",
-            ),
-        ]
-        for event in trace[:-1]:
-            await on_event(event)
-        if self.stream_delay_s > 0:
-            await asyncio.sleep(self.stream_delay_s)
-
         return AgentRunResult(
-            answer=f"echo: {payload.message}",
-            trace=trace,
-            model_name="openai:gpt-5-nano",
-            input_tokens=11,
-            output_tokens=7,
-            total_tokens=18,
-            search_calls=1,
-            raw_payload={"messages": []},
+            answer="Anthropic is an AI safety company founded by Dario Amodei.",
+            model_name="fake-model", input_tokens=10, output_tokens=20, search_calls=1,
         )
 
 
-@pytest.fixture()
-def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[TestClient, None, None]:
-    db_path = tmp_path / "test.db"
-    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
-    get_settings.cache_clear()
+class FakeExtractor:
+    async def extract(self, user_message: str, assistant_message: str):
+        return (
+            [
+                ExtractedEntity(name="Anthropic", type="organization", summary="AI safety company"),
+                ExtractedEntity(name="Dario Amodei", type="person", summary="CEO of Anthropic"),
+            ],
+            [
+                ExtractedRelation(
+                    source="Anthropic", target="Dario Amodei", type="founded_by",
+                    description="Founded in 2021",
+                )
+            ],
+        )
 
-    app = create_application()
-    StubAgentService.invocations = []
-    StubAgentService.stream_delay_s = 0.0
-    app.dependency_overrides[get_agent_service] = StubAgentService
 
-    with TestClient(app) as test_client:
-        yield test_client
+@pytest.fixture
+async def test_db():
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    db_module._engine = engine
+    db_module._session_factory = factory
+    yield factory
+    db_module._engine = None
+    db_module._session_factory = None
+    await engine.dispose()
 
-    get_settings.cache_clear()
-    asyncio.run(dispose_engine())
+
+@pytest.fixture
+async def db_session(test_db):
+    async with test_db() as session:
+        yield session
+
+
+@pytest.fixture
+def fake_agent():
+    return FakeAgentService()
+
+
+@pytest.fixture
+async def client(test_db, fake_agent):
+    app = create_app()
+    app.dependency_overrides[get_agent_service] = lambda: fake_agent
+    app.dependency_overrides[get_extractor] = lambda: FakeExtractor()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
