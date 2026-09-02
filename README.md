@@ -1,93 +1,76 @@
-# DeepAgents Chat Platform
+# Cortex
 
-Monorepo for a Python DeepAgents backend and a React/Vite frontend. The project starts as a simple chat agent with Tavily web search, PostgreSQL-backed persistence, automated tests, and an admin dashboard for costs, latency, and token usage.
+A deep-research agent that **remembers**. Cortex pairs a LangChain DeepAgents research
+loop (with Tavily web search) with a lightweight knowledge-graph memory: after every
+exchange it extracts entities and typed relations, merges them into a graph stored in
+SQLite, and recalls the relevant subgraph into the agent's context on future turns —
+across sessions.
+
+The web UI is a minimal, codex-style chat with two live visualizations:
+
+- **Agent state** — a live trace of each run: memory recall, reasoning notes, every web
+  search with its sources, the synthesized answer, and the resulting memory update.
+- **Memory graph** — a force-directed view of everything Cortex knows, with a growth
+  timeline you can scrub to replay how the graph evolved session by session.
 
 ## Stack
 
-- Python 3.12
-- FastAPI
-- LangChain DeepAgents
-- Tavily search
-- PostgreSQL
-- React 19 + Vite
-- shadcn/ui
-- Pytest + Vitest
+- **Backend** — Python 3.12, FastAPI, SQLite (SQLAlchemy async + aiosqlite),
+  LangChain DeepAgents, Tavily search, SSE streaming.
+- **Memory** — entity/relation extraction via LLM, graph tables (`entities`,
+  `relations`) plus an append-only `graph_events` log powering the evolution timeline.
+- **Frontend** — React 19, Vite, Tailwind v4, lucide icons, d3-force graph on canvas.
 
-## Project layout
-
-- `backend/` FastAPI service, DeepAgents integration, persistence, and admin APIs
-- `frontend/` React app with chat UI and metrics dashboard
-- `docker-compose.yml` local PostgreSQL, backend, and frontend services
-
-## Local setup
-
-### 1. Configure env files
+## Quick start
 
 ```bash
-copy .env.example .env
-```
-
-Set at least in `.env`:
-
-- `OPENAI_API_KEY`
-- `TAVILY_API_KEY`
-
-### 2. Start the full stack with Docker Compose
-
-```bash
+cp .env.example .env      # add OPENAI_API_KEY and TAVILY_API_KEY
 docker compose up --build
+# frontend: http://localhost:5173  ·  backend: http://localhost:8000
 ```
 
-Services:
-
-- frontend: `http://localhost:5173`
-- backend: `http://localhost:8000`
-- postgres: `localhost:5432`
-
-### 3. Run the backend locally without Docker if needed
+### Local development
 
 ```bash
+# backend
 cd backend
-uv python install 3.12
+cp .env.example .env      # add your keys
 uv sync
-copy .env.example .env
+uv run uvicorn cortex.main:app --reload --port 8000
+uv run pytest             # tests
+uv run ruff check         # lint
 
-uv run uvicorn deepagents_app.main:app --reload --port 8000
-```
-
-### 4. Run the frontend locally without Docker if needed
-
-```bash
+# frontend
 cd frontend
 npm install
-npm run dev
+npm run dev               # http://localhost:5173
+npm run build             # typecheck + production build
 ```
 
-The frontend expects the backend at `http://localhost:8000/api/v1` by default.
+## How memory works
 
-## Tests
+1. **Recall** — the user's message is matched against entity names in the graph; hits
+   plus their 1-hop neighborhood are rendered into a `LONG-TERM MEMORY` block in the
+   agent's system prompt.
+2. **Research** — the deep agent plans, searches the web via Tavily, and synthesizes a
+   cited answer, streaming every step over SSE.
+3. **Memorize** — an extraction pass pulls entities (person, organization, product,
+   technology, place, event, concept) and typed relations from the exchange. New
+   knowledge is inserted; repeated knowledge reinforces mention counts and edge
+   weights. Every mutation is logged to `graph_events` with session/run provenance.
 
-Backend:
+The memory page reads `/api/memory/graph`, `/api/memory/timeline`, and
+`/api/memory/events` to draw the graph, the cumulative growth chart, and the replay
+slider.
 
-```bash
-cd backend
-uv run ruff check
-uv run pytest
-```
+## API surface
 
-Frontend:
-
-```bash
-cd frontend
-npm run lint
-npm run test
-npm run build
-```
-
-## Current capabilities
-
-- Chat endpoint backed by DeepAgents and Tavily search
-- Persisted conversations, messages, and run metrics
-- Admin API for aggregate metrics and recent runs
-- Chat UI with tracked responses
-- Dashboard for conversations, runs, estimated spend, latency, and token trends
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /api/chat/stream` | Run a research turn, streaming SSE trace events |
+| `GET /api/sessions` / `GET,DELETE /api/sessions/{id}` | Session history |
+| `GET /api/memory/graph` | Full knowledge graph (nodes + edges) |
+| `GET /api/memory/timeline` | Cumulative graph size after each run |
+| `GET /api/memory/events` | Recent graph mutations |
+| `GET /api/memory/stats` | Totals + most-mentioned entities |
+| `GET /api/memory/entities/{id}` | Entity detail: neighbors, relations, history |

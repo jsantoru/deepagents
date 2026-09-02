@@ -1,296 +1,193 @@
-export type ChatMetrics = {
-  model_name: string
-  latency_ms: number
-  input_tokens: number
-  output_tokens: number
-  total_tokens: number
-  estimated_cost_usd: number
-  search_calls: number
-}
+const API_BASE =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8000/api'
 
 export type ResearchMode = 'light' | 'standard'
 
-export type ChatAttachment = {
+export interface TraceEvent {
   id: string
-  name: string
-  mime_type: string
-  size_bytes: number
-  text_content: string
-}
-
-export type ChatTraceEvent = {
-  id: string
-  sequence?: number | null
   type: string
   title: string
   content: string
-  metadata: Record<string, string | number>
+  metadata: Record<string, unknown>
 }
 
-export type ChatResponse = {
-  conversation_id: string
-  run_id: string
-  answer: string
-  trace: ChatTraceEvent[]
-  metrics: ChatMetrics
-}
-
-export type AdminOverviewResponse = {
-  conversation_count: number
-  run_count: number
-  total_tokens: number
-  total_estimated_cost_usd: number
-  average_latency_ms: number
-}
-
-export type AdminRunSummary = {
-  run_id: string
-  conversation_id: string
-  answer_preview: string
-  metrics: ChatMetrics
-  created_at: string
-}
-
-export type AdminRunsResponse = {
-  runs: AdminRunSummary[]
-}
-
-export type ConversationSummary = {
-  conversation_id: string
-  title: string
-  preview: string
-  message_count: number
-  last_message_at: string
-  active_run?: {
-    run_id: string
-    conversation_id: string
-    status: string
-    error_message?: string | null
-  } | null
-}
-
-export type ConversationSummariesResponse = {
-  conversations: ConversationSummary[]
-}
-
-export type ConversationMessage = {
+export interface MessageOut {
   id: string
   role: 'user' | 'assistant'
   content: string
+  run_id: string | null
   created_at: string
-  metrics?: ChatMetrics | null
-  attachments?: Array<ChatAttachment & { sha256: string; created_at: string }>
-  trace?: ChatTraceEvent[]
 }
 
-export type ConversationDetailResponse = {
-  conversation_id: string
+export interface RunOut {
+  id: string
+  status: string
+  model: string
+  latency_ms: number
+  input_tokens: number
+  output_tokens: number
+  search_calls: number
+  entities_added: number
+  relations_added: number
+  created_at: string
+}
+
+export interface SessionSummary {
+  id: string
   title: string
-  messages: ConversationMessage[]
-  active_run?: {
-    run_id: string
-    conversation_id: string
-    status: string
-    error_message?: string | null
-  } | null
+  created_at: string
+  updated_at: string
+  message_count: number
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1'
-
-export async function sendChatMessage(
-  message: string,
-  conversationId?: string,
-  researchMode: ResearchMode = 'standard',
-  attachments: ChatAttachment[] = [],
-): Promise<ChatResponse> {
-  const response = await fetch(`${API_BASE_URL}/chat`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      message,
-      conversation_id: conversationId,
-      research_mode: researchMode,
-      attachments,
-    }),
-  })
-
-  if (!response.ok) {
-    throw new Error('The agent request failed.')
-  }
-
-  return (await response.json()) as ChatResponse
+export interface SessionDetail extends Omit<SessionSummary, 'message_count'> {
+  messages: MessageOut[]
+  runs: RunOut[]
 }
 
-type StreamChatCallbacks = {
-  onStatus?: (payload: Record<string, unknown>) => void
-  onTrace?: (event: ChatTraceEvent) => void
-  onFinal?: (response: ChatResponse) => void
+export interface GraphNode {
+  id: string
+  name: string
+  type: string
+  summary: string
+  mention_count: number
+  degree: number
+  first_session_id: string | null
+  created_at: string
+  updated_at: string
 }
 
-export async function streamChatMessage(
-  message: string,
-  conversationId: string | undefined,
-  researchMode: ResearchMode,
-  attachments: ChatAttachment[],
-  callbacks: StreamChatCallbacks,
+export interface GraphEdge {
+  id: string
+  source: string
+  target: string
+  type: string
+  description: string
+  weight: number
+  created_at: string
+}
+
+export interface GraphOut {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+}
+
+export interface TimelinePoint {
+  run_id: string
+  session_id: string
+  created_at: string
+  entities_added: number
+  relations_added: number
+  total_entities: number
+  total_relations: number
+}
+
+export interface GraphEventOut {
+  id: string
+  kind: string
+  label: string
+  session_id: string | null
+  created_at: string
+}
+
+export interface MemoryStats {
+  entities: number
+  relations: number
+  sessions: number
+  runs: number
+  events: number
+  top_entities: GraphNode[]
+}
+
+export interface EntityDetail {
+  node: GraphNode
+  neighbors: GraphNode[]
+  edges: GraphEdge[]
+  events: GraphEventOut[]
+}
+
+async function get<T>(path: string): Promise<T> {
+  const resp = await fetch(`${API_BASE}${path}`)
+  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
+  return resp.json() as Promise<T>
+}
+
+export const fetchSessions = () => get<SessionSummary[]>('/sessions')
+export const fetchSession = (id: string) => get<SessionDetail>(`/sessions/${id}`)
+export const fetchGraph = () => get<GraphOut>('/memory/graph')
+export const fetchTimeline = () => get<TimelinePoint[]>('/memory/timeline')
+export const fetchMemoryStats = () => get<MemoryStats>('/memory/stats')
+export const fetchMemoryEvents = (limit = 100) =>
+  get<GraphEventOut[]>(`/memory/events?limit=${limit}`)
+export const fetchEntity = (id: string) => get<EntityDetail>(`/memory/entities/${id}`)
+
+export async function deleteSession(id: string): Promise<void> {
+  const resp = await fetch(`${API_BASE}/sessions/${id}`, { method: 'DELETE' })
+  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
+}
+
+export interface ChatStreamHandlers {
+  onEvent: (event: TraceEvent) => void
+  onDone: () => void
+  onError: (error: Error) => void
+}
+
+/** POST /chat/stream and parse the SSE response incrementally. */
+export async function streamChat(
+  payload: { message: string; session_id?: string | null; research_mode: ResearchMode },
+  handlers: ChatStreamHandlers,
   signal?: AbortSignal,
-): Promise<ChatResponse> {
-  const response = await fetch(`${API_BASE_URL}/chat/stream`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    signal,
-    body: JSON.stringify({
-      message,
-      conversation_id: conversationId,
-      research_mode: researchMode,
-      attachments,
-    }),
-  })
-
-  if (!response.ok || !response.body) {
-    throw new Error('The agent stream request failed.')
-  }
-
-  return consumeEventStream(response.body, callbacks, signal)
-}
-
-export async function reconnectChatRun(
-  runId: string,
-  afterSequence: number,
-  callbacks: StreamChatCallbacks,
-  signal?: AbortSignal,
-): Promise<ChatResponse> {
-  const response = await fetch(`${API_BASE_URL}/chat/stream/${runId}?after_sequence=${afterSequence}`, { signal })
-
-  if (!response.ok || !response.body) {
-    throw new Error('The agent reconnection request failed.')
-  }
-
-  return consumeEventStream(response.body, callbacks, signal)
-}
-
-export async function cancelChatRun(runId: string): Promise<{ cancelled: boolean }> {
-  const response = await fetch(`${API_BASE_URL}/chat/stream/${runId}/cancel`, {
-    method: 'POST',
-  })
-
-  if (!response.ok) {
-    throw new Error('The run cancellation request failed.')
-  }
-
-  return (await response.json()) as { cancelled: boolean }
-}
-
-async function consumeEventStream(
-  body: ReadableStream<Uint8Array>,
-  callbacks: StreamChatCallbacks,
-  signal?: AbortSignal,
-): Promise<ChatResponse> {
-  const reader = body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let finalResponse: ChatResponse | undefined
-
+): Promise<void> {
   try {
-    while (true) {
-      if (signal?.aborted) {
-        throw new DOMException('The operation was aborted.', 'AbortError')
-      }
+    const resp = await fetch(`${API_BASE}/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal,
+    })
+    if (!resp.ok || !resp.body) throw new Error(`${resp.status} ${resp.statusText}`)
 
-      const { value, done } = await reader.read()
-      if (done) {
-        break
-      }
+    const reader = resp.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
 
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
       buffer += decoder.decode(value, { stream: true })
-      const parts = buffer.split('\n\n')
-      buffer = parts.pop() ?? ''
 
-      for (const part of parts) {
-        const parsed = parseSseEvent(part)
-        if (!parsed) {
-          continue
-        }
-
-        if (parsed.event === 'status') {
-          callbacks.onStatus?.(parsed.data as Record<string, unknown>)
-        } else if (parsed.event === 'trace') {
-          callbacks.onTrace?.(parsed.data as ChatTraceEvent)
-        } else if (parsed.event === 'final') {
-          finalResponse = parsed.data as ChatResponse
-          callbacks.onFinal?.(finalResponse)
-        } else if (parsed.event === 'error') {
-          throw new Error(String((parsed.data as { message?: string }).message ?? 'Unknown stream error.'))
+      let sep: number
+      while ((sep = buffer.indexOf('\n\n')) !== -1) {
+        const block = buffer.slice(0, sep)
+        buffer = buffer.slice(sep + 2)
+        const dataLine = block.split('\n').find((l) => l.startsWith('data: '))
+        if (!dataLine) continue
+        try {
+          const parsed = JSON.parse(dataLine.slice(6)) as TraceEvent
+          if (parsed && parsed.type) handlers.onEvent(parsed)
+        } catch {
+          // ignore malformed frames
         }
       }
     }
-  } finally {
-    await reader.cancel().catch(() => undefined)
-  }
-
-  if (!finalResponse) {
-    throw new Error('The agent stream ended before a final response was received.')
-  }
-
-  return finalResponse
-}
-
-function parseSseEvent(chunk: string): { event: string; data: unknown } | null {
-  const lines = chunk.split('\n')
-  const eventLine = lines.find((line) => line.startsWith('event: '))
-  const dataLine = lines.find((line) => line.startsWith('data: '))
-  if (!eventLine || !dataLine) {
-    return null
-  }
-
-  return {
-    event: eventLine.slice(7).trim(),
-    data: JSON.parse(dataLine.slice(6)),
+    handlers.onDone()
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') {
+      handlers.onDone()
+      return
+    }
+    handlers.onError(err as Error)
   }
 }
 
-export async function fetchAdminOverview(): Promise<AdminOverviewResponse> {
-  const response = await fetch(`${API_BASE_URL}/admin/overview`)
-
-  if (!response.ok) {
-    throw new Error('The admin overview request failed.')
-  }
-
-  return (await response.json()) as AdminOverviewResponse
+export const ENTITY_COLORS: Record<string, string> = {
+  person: '#e5b567',
+  organization: '#6ea8fe',
+  product: '#6fd8b2',
+  technology: '#b394e6',
+  place: '#5ec5d4',
+  event: '#e77c8d',
+  concept: '#9a9aa4',
 }
 
-export async function fetchAdminRuns(): Promise<AdminRunsResponse> {
-  const response = await fetch(`${API_BASE_URL}/admin/runs`)
-
-  if (!response.ok) {
-    throw new Error('The admin runs request failed.')
-  }
-
-  return (await response.json()) as AdminRunsResponse
-}
-
-export async function fetchConversationSummaries(): Promise<ConversationSummariesResponse> {
-  const response = await fetch(`${API_BASE_URL}/conversations`)
-
-  if (!response.ok) {
-    throw new Error('The conversation history request failed.')
-  }
-
-  return (await response.json()) as ConversationSummariesResponse
-}
-
-export async function fetchConversationDetail(
-  conversationId: string,
-): Promise<ConversationDetailResponse> {
-  const response = await fetch(`${API_BASE_URL}/conversations/${conversationId}`)
-
-  if (!response.ok) {
-    throw new Error('The conversation detail request failed.')
-  }
-
-  return (await response.json()) as ConversationDetailResponse
-}
+export const entityColor = (type: string): string => ENTITY_COLORS[type] ?? ENTITY_COLORS.concept
